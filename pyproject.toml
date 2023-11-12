@@ -10,7 +10,12 @@ description = ""
 authors = []
 
 [tool.poetry.dependencies]
+biopython = ">=1.81"
 numpy = ">=1.21.2"
+pandas = "*"
 python = "^3.10"
+tokenizers = ">=0.14.1"
 torch = ">=1.9.0"
 torchgfn = ">=1.1"
+seaborn = "*"
+jupyter = "*"
