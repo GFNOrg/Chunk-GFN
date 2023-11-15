@@ -11,6 +11,8 @@ from tokenizers.models import BPE
 from tokenizers.trainers import BpeTrainer
 from tokenizers.pre_tokenizers import Whitespace
 import torch
+from torch.utils.data import Dataset
+
 
 
 
@@ -78,7 +80,7 @@ def split_strings(input_list: list, max_length: int):
     return output_list
 
 
-class CCDS:
+class CCDS(Dataset):
     def __init__(self, batch_size: int = 32, max_len: int = 128):
         self.batch_size = batch_size
         self.max_len = max_len
@@ -117,5 +119,22 @@ class CCDS:
     def __len__(self):
         return self.n_batch
 
+    def __getitem__(self, i):
+        return self.get_batch(i)
+
     def __call__(self, i):
         return self.get_batch(i)
+
+    def add_tokens(self, tokens: list):
+        self.tokenizer.add_tokens(tokens)
+
+    def id_to_token(self, id: int):
+        return self.tokenizer.id_to_token(id)
+
+    def decode(self, ids: list):
+        return self.tokenizer.decode(ids)
+
+
+if __name__ == "__main__":
+    dset = CCDS()
+    import IPython; IPython.embed()
