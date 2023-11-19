@@ -33,3 +33,33 @@ class RNN(nn.Module):
         for layer in self.layers:
             out = layer(out)
         return out
+    
+class SeqMLP(nn.Module):
+    def __init__(self, in_dim, hidden_dim, num_layers, act=nn.ReLU()):
+        super(SeqMLP, self).__init__()
+        self.num_layers = num_layers
+        self.hidden_dim = hidden_dim
+        self.embedding = nn.Linear(in_dim, hidden_dim)
+
+        self.rnn_encoder = nn.GRU(
+            hidden_dim, hidden_dim, num_layers=num_layers, batch_first=True
+        )
+
+        self.layers = nn.ModuleList()
+        self.layers.append(nn.Linear(hidden_dim, hidden_dim))
+        self.layers.append(act)
+        for _ in range(self.num_layers):
+            self.layers.append(nn.Linear(hidden_dim, hidden_dim))
+            self.layers.append(act)
+        self.layers.append(nn.Linear(hidden_dim, 1))
+
+    def forward(self, x):
+        """
+        Args:
+            xstate [batch_shape, seq_length, dim]: Tensor that contains an input sequence.
+        """
+        x_, _ = self.rnn_encoder(self.embedding(x))
+        out = x_[:, -1]
+        for layer in self.layers:
+            out = layer(out)
+        return out
