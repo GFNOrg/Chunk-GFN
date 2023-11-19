@@ -1,2 +1,10 @@
-_target_: gfn.gflownet.TBGFlowNet
-init_logZ: 0.
+_target_: src.chunkgfn.gfn.conditional_tb.ConditionalTBGFlowNet
+on_policy: False
+log_reward_clip_min: -12
+logZ:
+  _target_: src.chunkgfn.models.rnn.SeqMLP
+  in_dim: 3
+  hidden_dim: 256
+  num_layers: 2
+  act:
+    _target_: torch.nn.ReLU

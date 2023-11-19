@@ -25,7 +25,7 @@ class Trainer:
         self.pf_estimator = pf_estimator.to(self.hparams.device)
         self.pb_estimator = pb_estimator.to(self.hparams.device)
         self.sampler = sampler
-        self.gflownet = gflownet
+        self.gflownet = gflownet.to(self.hparams.device)
         self.replay_buffer = replay_buffer
         self.optimizer = self.configure_optimizers()
 
@@ -83,6 +83,5 @@ class Trainer:
         for iteration in tqdm(range(self.hparams.num_iterations)):
             gfn_loss, training_objects, trajectories = self.training_pass()
             self.metrics["loss"] = self.loss(gfn_loss).item()
-            self.metrics["logZ"] = self.gflownet.logZ.item()
             self.metrics["logRewards"] = trajectories.log_rewards.mean().item()
             tqdm.write(f"{iteration}: {self.metrics}")
