@@ -44,7 +44,10 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
     env: Env = hydra.utils.instantiate(cfg.env)
 
     log.info("Instantiating the replay buffer...")
-    replay_buffer: ReplayBuffer = hydra.utils.instantiate(cfg.replay_buffer, env=env)
+    if "replay_buffer" in cfg:
+        replay_buffer: ReplayBuffer = hydra.utils.instantiate(cfg.replay_buffer, env=env)
+    else:
+        replay_buffer: ReplayBuffer = None
 
     log.info("Instantiating the forward and backward estimators...")
     pf_estimator: GFNModule = hydra.utils.instantiate(

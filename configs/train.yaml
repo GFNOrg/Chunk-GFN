@@ -5,7 +5,7 @@
 defaults:
   - _self_
   - env: text_chunk
-  - replay_buffer: default
+  - replay_buffer: null
   - forward: discrete_rnn
   - backward: uniform
   - gflownet: trajectory_balance
