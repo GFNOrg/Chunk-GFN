@@ -1,0 +1,3 @@
+_target_: gfn.containers.ReplayBuffer
+objects_type: trajectories
+capacity: 10000
