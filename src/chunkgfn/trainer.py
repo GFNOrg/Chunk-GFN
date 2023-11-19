@@ -30,7 +30,7 @@ class Trainer:
         self.optimizer = self.configure_optimizers()
 
         # Metrics stuff
-        self.loss = MeanMetric()
+        self.loss = MeanMetric().to(self.hparams.device)
         self.metrics = {}
 
     def configure_optimizers(self):
