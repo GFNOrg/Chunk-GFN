@@ -14,9 +14,6 @@ import torch
 from torch.utils.data import Dataset
 
 
-
-
-
 def load_fasta_into_dict(data_dir):
     input_file = os.path.join(data_dir, "ccds/CCDS_nucleotide.current.fna.gz")
 
@@ -35,7 +32,7 @@ def load_fasta_into_dict(data_dir):
 
 def get_tokenizer(records, use_special_tokens=False, train=False):
     # Initalize the tokenizer.
-    tokenizer = Tokenizer(BPE({"T": 0, "C": 1, "A":2, "G":3}, [], unk_token="[UNK]"))
+    tokenizer = Tokenizer(BPE({"T": 0, "C": 1, "A": 2, "G": 3}, [], unk_token="[UNK]"))
     tokenizer.pre_tokenizer = Whitespace()
 
     if train:
@@ -58,7 +55,6 @@ def count_instances(records, tokenizer):
     # Sort the dict by the values (the token counts).
     token_counts = dict(sorted(token_counts.items(), key=lambda item: item[1]))
     return token_counts
-
 
 
 def split_strings(input_list: list, max_length: int):
@@ -105,7 +101,7 @@ class CCDS(Dataset):
         assert 0 <= i <= self.n_batch - 1  # -1 again to handle 0-indexing.
         batch = self.tokenizer.encode_batch(
             self.all_sequences[
-                self.sample_idx[self.batch_idx[i]:self.batch_idx[i+1]]
+                self.sample_idx[self.batch_idx[i] : self.batch_idx[i + 1]]
             ]
         )
 
@@ -137,4 +133,6 @@ class CCDS(Dataset):
 
 if __name__ == "__main__":
     dset = CCDS()
-    import IPython; IPython.embed()
+    import IPython
+
+    IPython.embed()
