@@ -1,17 +1,19 @@
-import os
 import gzip
+import os
 from collections import Counter
 
+import numpy as np
 import pandas as pd
 import seaborn as sns
-import numpy as np
+import torch
 from Bio import SeqIO
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
-from tokenizers.trainers import BpeTrainer
 from tokenizers.pre_tokenizers import Whitespace
-import torch
+from tokenizers.trainers import BpeTrainer
 from torch.utils.data import Dataset
+
+from chunkgfn.utils import default_data_path
 
 
 def load_fasta_into_dict(data_dir):
@@ -82,6 +84,9 @@ class CCDS(Dataset):
         self.max_len = max_len
 
         data_dir = os.getenv("CHUNKGFN_DATA")
+        if not data_dir:
+            data_dir = os.path.join(default_data_path(), "ccds")
+
         records = load_fasta_into_dict(data_dir)
         self.tokenizer = get_tokenizer(records, train=False)
 
