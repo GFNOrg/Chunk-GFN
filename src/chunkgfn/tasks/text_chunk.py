@@ -73,7 +73,8 @@ class ConditionalGeneration(DiscreteEnv):
         When random is true and seed is not None, environment randomization is fixed by
         the submitted seed for reproducibility.
         """
-        self.dl_iterator = cycle(self.dataloader)  # Restart the iterator
+        # TODO: Remove this thing
+        self.dl_iterator = cycle(self.dataloader)
         assert not (random and sink)
 
         if random and seed is not None:
@@ -83,6 +84,7 @@ class ConditionalGeneration(DiscreteEnv):
             batch_shape = (1,)
         if isinstance(batch_shape, int):
             batch_shape = (batch_shape,)
+        # Sample from the dataloader and concatenate to the "initial" states
         return self.States.from_batch_shape(
             batch_shape=batch_shape, random=random, sink=sink
         )
@@ -104,29 +106,11 @@ class ConditionalGeneration(DiscreteEnv):
             def make_random_states_tensor(
                 cls, batch_shape: Tuple[int, ...]
             ) -> TT["batch_shape", "state_shape", torch.float]:
+                # TODO: remove this
                 x = next(env.dl_iterator).to(env.device).long()
                 s = -torch.ones_like(x).to(env.device).long()
                 s = torch.cat([x, s], dim=1)
                 return s
-
-            def make_masks(
-                self,
-            ) -> Tuple[
-                TT["batch_shape", "n_actions", torch.bool],
-                TT["batch_shape", "n_actions - 1", torch.bool],
-            ]:
-                forward_masks = torch.zeros(
-                    self.batch_shape + (env.n_actions,),
-                    device=env.device,
-                    dtype=torch.bool,
-                )
-                backward_masks = torch.zeros(
-                    self.batch_shape + (env.n_actions - 1,),
-                    device=env.device,
-                    dtype=torch.bool,
-                )
-
-                return forward_masks, backward_masks
 
             def update_masks(self) -> None:
                 # The following two lines are for typing only.
@@ -140,6 +124,7 @@ class ConditionalGeneration(DiscreteEnv):
                 )
                 batch_ndim = len(self.batch_shape)
                 index = [slice(None)] * batch_ndim + [2 * env.max_len - 1]
+                # TODO: Mask exit actions
                 self.forward_masks[..., :-1] = self.tensor[index] == -1
                 index = [slice(None)] * batch_ndim + [env.max_len]
                 self.backward_masks = self.tensor[index] != -1
