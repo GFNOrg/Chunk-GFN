@@ -1,4 +1,0 @@
-_target_: gfn.modules.DiscretePolicyEstimator
-module:
-  _target_: src.chunkgfn.models.uniform.SeqDiscreteUniform
-  output_dim: 3

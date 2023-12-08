@@ -1,16 +1,16 @@
-import torch
 from torch import nn
 
 
 class RNN(nn.Module):
-    def __init__(self, in_dim, hidden_dim, num_layers, out_dim, act=nn.ReLU()):
+    def __init__(self, num_layers, hidden_dim, vocab_size, act):
         super(RNN, self).__init__()
         self.num_layers = num_layers
         self.hidden_dim = hidden_dim
-        self.embedding = nn.Linear(in_dim, hidden_dim)
+        self.vocab_size = vocab_size
+        self.embedding = nn.Linear(vocab_size, hidden_dim)
 
         self.rnn_encoder = nn.GRU(
-            hidden_dim, hidden_dim, num_layers=num_layers, batch_first=True
+            hidden_dim, hidden_dim, num_layers=2, batch_first=True
         )
 
         self.layers = nn.ModuleList()
@@ -19,30 +19,35 @@ class RNN(nn.Module):
         for _ in range(self.num_layers):
             self.layers.append(nn.Linear(hidden_dim, hidden_dim))
             self.layers.append(act)
-        self.layers.append(nn.Linear(hidden_dim, out_dim))
+        self.layers.append(nn.LayerNorm(hidden_dim))
+        self.layers.append(nn.Linear(hidden_dim, vocab_size))
 
-    def forward(self, xstate):
+    def forward(self, x, state):
         """
         Args:
-            xstate [batch_shape, 2*seq_length, dim]: Tensor that contains the conditioning vector which takes up seq_length of space as well as the state that takes the remaining seq_length.
+            x [B, N, dim]
+            state [B, M, dim]
         """
-        x, state = torch.chunk(xstate, 2, 1)
+
         _, x_ = self.rnn_encoder(self.embedding(x))
         s, _ = self.rnn_encoder(self.embedding(state), x_)
         out = s[:, -1]
         for layer in self.layers:
             out = layer(out)
+
         return out
-    
-class SeqMLP(nn.Module):
-    def __init__(self, in_dim, hidden_dim, num_layers, act=nn.ReLU()):
-        super(SeqMLP, self).__init__()
+
+
+class logZ(nn.Module):
+    def __init__(self, num_layers, hidden_dim, vocab_size, act):
+        super(logZ, self).__init__()
         self.num_layers = num_layers
         self.hidden_dim = hidden_dim
-        self.embedding = nn.Linear(in_dim, hidden_dim)
+        self.vocab_size = vocab_size
+        self.embedding = nn.Linear(vocab_size, hidden_dim)
 
         self.rnn_encoder = nn.GRU(
-            hidden_dim, hidden_dim, num_layers=num_layers, batch_first=True
+            hidden_dim, hidden_dim, num_layers=2, batch_first=True
         )
 
         self.layers = nn.ModuleList()
@@ -51,15 +56,16 @@ class SeqMLP(nn.Module):
         for _ in range(self.num_layers):
             self.layers.append(nn.Linear(hidden_dim, hidden_dim))
             self.layers.append(act)
+        self.layers.append(nn.LayerNorm(hidden_dim))
         self.layers.append(nn.Linear(hidden_dim, 1))
 
     def forward(self, x):
         """
         Args:
-            xstate [batch_shape, seq_length, dim]: Tensor that contains an input sequence.
+            x [B, N, dim]
         """
-        x_, _ = self.rnn_encoder(self.embedding(x))
-        out = x_[:, -1]
+        x__, _ = self.rnn_encoder(self.embedding(x))
+        logZ = x__[:, -1]
         for layer in self.layers:
-            out = layer(out)
-        return out
+            logZ = layer(logZ)
+        return logZ

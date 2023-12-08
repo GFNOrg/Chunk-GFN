@@ -1,1 +1,0 @@
-from .conditional_tb import ConditionalTBGFlowNet

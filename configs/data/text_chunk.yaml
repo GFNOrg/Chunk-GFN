@@ -1,0 +1,7 @@
+_target_: chunkgfn.datamodules.text_chunk.ChunkModule
+dataset:
+  max_len: 30
+  num_sentences: 1000
+batch_size: 32
+num_workers: 0
+pin_memory: False

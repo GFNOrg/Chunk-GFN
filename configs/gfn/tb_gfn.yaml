@@ -1,0 +1,31 @@
+_target_: chunkgfn.gfn.chonk.ChonkGFN
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  weight_decay: 0.0
+
+scheduler: null
+
+forward_model:
+  _target_: chunkgfn.models.rnn.RNN
+  num_layers: 1
+  hidden_dim: 128
+  vocab_size: 3
+  act:
+    _target_: torch.nn.ReLU
+
+partition_model:
+  _target_: chunkgfn.models.rnn.logZ
+  num_layers: 1
+  hidden_dim: 128
+  vocab_size: 3
+  act:
+    _target_: torch.nn.ReLU
+
+criterion:
+  _target_: chunkgfn.rewards.mse.MSE
+
+lr: 3e-4
+partition_lr: 3e-4
+monitor: train/loss

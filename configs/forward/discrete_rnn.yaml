@@ -1,9 +1,0 @@
-_target_: gfn.modules.DiscretePolicyEstimator
-module:
-  _target_: src.chunkgfn.models.rnn.RNN
-  in_dim: 3
-  hidden_dim: 256
-  num_layers: 2
-  out_dim: 4
-  act:
-    _target_: torch.nn.ReLU
