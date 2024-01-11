@@ -32,6 +32,10 @@ epsilon_scheduler:
   final_value: 0
   max_epochs: ${trainer.max_epochs}
 
+replay_buffer:
+  _target_: chunkgfn.replay_buffer.random_replay.RandomReplay
+  capacity: 5000
+
 lr: 3e-4
 partition_lr: 3e-4
 monitor: train/loss
