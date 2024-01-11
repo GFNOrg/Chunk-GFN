@@ -25,10 +25,14 @@ class TBGFN(LightningModule):
         self.criterion = criterion
 
         self.mse_loss = nn.MSELoss()
+
         self.train_loss = MeanMetric()
         self.train_logreward = MeanMetric()
         self.train_logZ = MeanMetric()
-        self.train_correlation = R2Score()
+
+        self.val_loss = MeanMetric()
+        self.val_logreward = MeanMetric()
+        self.val_logZ = MeanMetric()
 
     def configure_optimizers(self):
         params = [
@@ -87,7 +91,8 @@ class TBGFN(LightningModule):
         return state, log_pf, logZ
 
     def gfn_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor]
+        self,
+        batch: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = batch
         state, log_pf, logZ = self(x)
@@ -95,25 +100,29 @@ class TBGFN(LightningModule):
         loss = self.mse_loss(logZ + log_pf, logreward)
         return loss, state, logreward, logZ, log_pf
 
+    @torch.no_grad
+    def sample_trajectories(self, batch):
+        logrewards = []
+        log_pfs = []
+        for _ in range(self.hparams.repetitions):
+            _, _, logreward, _, log_pf = self.gfn_step(batch)
+            logrewards.append(logreward)
+            log_pfs.append(log_pf)
+        logrewards = torch.stack(logrewards, dim=-1)
+        log_pfs = torch.stack(log_pfs, dim=-1)
+        return logrewards, log_pfs
+
     def training_step(self, train_batch, batch_idx) -> Any:
         loss, state, logreward, logZ, log_pf = self.gfn_step(train_batch)
 
         self.train_loss(loss)
         self.train_logreward(logreward.mean())
         self.train_logZ(logZ.mean())
-        self.train_correlation(log_pf, logreward)
 
         self.log("train/loss", self.train_loss, on_step=True, prog_bar=True)
         self.log(
             "train/logreward",
             self.train_logreward,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
-        self.log(
-            "train/correlation",
-            self.train_correlation,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
@@ -127,3 +136,26 @@ class TBGFN(LightningModule):
         )
 
         return loss
+
+    def validation_step(self, val_batch, batch_idx) -> Any:
+        loss, state, logreward, logZ, log_pf = self.gfn_step(val_batch)
+
+        self.val_loss(loss)
+        self.val_logreward(logreward.mean())
+        self.val_logZ(logZ.mean())
+
+        self.log("val/loss", self.val_loss, on_step=True, prog_bar=True)
+        self.log(
+            "val/logreward",
+            self.val_logreward,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
+        self.log(
+            "val/logZ",
+            self.val_logZ,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
