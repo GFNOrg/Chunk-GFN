@@ -1,16 +1,13 @@
 from typing import Any, Tuple
 
-import pytorch_lightning as pl
 import torch
-import torch.nn.functional as F
-from einops import rearrange, repeat
 from lightning import LightningModule
-from torch import Tensor, nn
+from torch import nn
 from torch.distributions import Categorical
 from torchmetrics import MeanMetric, R2Score
 
 
-class ChonkGFN(LightningModule):
+class TBGFN(LightningModule):
     def __init__(
         self,
         forward_model: torch.nn.Module,
