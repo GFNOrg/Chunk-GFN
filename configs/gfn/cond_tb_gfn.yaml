@@ -1,4 +1,4 @@
-_target_: chunkgfn.gfn.chonk.ChonkGFN
+_target_: chunkgfn.gfn.cond_tb_gfn.Cond_TBGFN
 
 optimizer:
   _target_: torch.optim.Adam
@@ -25,6 +25,12 @@ partition_model:
 
 criterion:
   _target_: chunkgfn.rewards.mse.MSE
+
+epsilon_scheduler:
+  _target_: chunkgfn.schedulers.linear_schedule.LinearSchedule
+  initial_value: 1
+  final_value: 0
+  max_epochs: ${trainer.max_epochs}
 
 lr: 3e-4
 partition_lr: 3e-4
