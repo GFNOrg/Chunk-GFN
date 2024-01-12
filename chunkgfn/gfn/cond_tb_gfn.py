@@ -90,8 +90,6 @@ class Cond_TBGFN(LightningModule):
         bs, max_len, dim = x.shape
         state = -torch.ones(bs, 1, dim).to(x)
         p_f_s = self.forward_model(x, state)
-        log_pf = 0
-        log_pb = 0
 
         # Start unrolling the trajectories
         for t in range(max_len):
@@ -116,16 +114,31 @@ class Cond_TBGFN(LightningModule):
             action = torch.zeros((bs, dim)).to(state)
             action.scatter_(-1, act.unsqueeze(-1), 1)
             action = action.unsqueeze(1)
-            log_pf += Categorical(logits=p_f_s).log_prob(act)
-            log_pb += torch.zeros_like(log_pf).to(log_pf)
             if t == 0:
                 new_state = action
             else:
                 new_state = torch.cat([state, action], dim=1)
             p_f_s = self.forward_model(x, new_state)
             state = new_state
+
+        return state
+
+    def compute_loss(self, x, state):
+        bs, max_len, dim = x.shape
+        log_pf = 0
+        log_pb = 0
+        for t in range(max_len):
+            if t == max_len - 1:
+                p_f_s = self.forward_model(x, -torch.ones(bs, 1, dim).to(x))
+            else:
+                p_f_s = self.forward_model(x, state[:, : max_len - t - 1])
+            act = torch.argmax(state[:, max_len - t - 1], dim=-1)
+            log_pf += Categorical(logits=p_f_s).log_prob(act)
+
         logZ = self.partition_model(x).squeeze(-1)
-        return state, log_pf, log_pb, logZ
+        logreward = self.criterion(state, x)
+        loss = self.mse_loss(logZ + log_pf, logreward + log_pb)
+        return loss, logreward, logZ
 
     def sample(
         self,
@@ -135,8 +148,8 @@ class Cond_TBGFN(LightningModule):
         temperature: float = 0.0,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = batch
-        state, log_pf, log_pb, logZ = self(x, train, epsilon, temperature)
-        return x, state, log_pf, log_pb, logZ
+        state = self(x, train, epsilon, temperature)
+        return x, state
 
     def training_step(self, train_batch, batch_idx) -> Any:
         if self.epsilon_scheduler is not None:
@@ -148,16 +161,15 @@ class Cond_TBGFN(LightningModule):
         else:
             temperature = None
 
-        x, state, log_pf, log_pb, logZ = self.sample(
+        x, state = self.sample(
             train_batch, train=True, epsilon=epsilon, temperature=temperature
         )
         if self.replay_buffer is not None:
             with torch.no_grad():
-                self.replay_buffer.add(x, state, log_pf, log_pb, logZ)
-                x, state, log_pf, log_pb, logZ = self.replay_buffer.sample(x.shape[0])
+                self.replay_buffer.add(x, state)
+                x, state = self.replay_buffer.sample(x.shape[0])
 
-        logreward = self.criterion(state, x)
-        loss = self.mse_loss(logZ + log_pf, logreward + log_pb)
+        loss, logreward, logZ = self.compute_loss(x, state)
 
         self.train_loss(loss)
         self.train_logreward(logreward.mean())
@@ -178,16 +190,19 @@ class Cond_TBGFN(LightningModule):
             on_epoch=True,
             prog_bar=True,
         )
+        if self.epsilon_scheduler is not None:
+            self.log("epsilon", epsilon, on_step=False, on_epoch=True, prog_bar=False)
+        if self.temperature_scheduler is not None:
+            self.log(
+                "temperature", epsilon, on_step=False, on_epoch=True, prog_bar=False
+            )
 
         return loss
 
     def validation_step(self, val_batch, batch_idx) -> Any:
-        x, state, log_pf, log_pb, logZ = self.sample(
-            val_batch, train=False, epsilon=None, temperature=None
-        )
+        x, state = self.sample(val_batch, train=False, epsilon=None, temperature=None)
 
-        logreward = self.criterion(state, x)
-        loss = self.mse_loss(logZ + log_pf, logreward + log_pb)
+        loss, logreward, logZ = self.compute_loss(x, state)
         self.val_loss(loss)
         self.val_logreward(logreward.mean())
         self.val_logZ(logZ.mean())

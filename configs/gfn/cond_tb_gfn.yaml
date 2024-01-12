@@ -34,7 +34,7 @@ epsilon_scheduler:
 
 replay_buffer:
   _target_: chunkgfn.replay_buffer.random_replay.RandomReplay
-  capacity: 5000
+  capacity: 10000
 
 lr: 3e-4
 partition_lr: 3e-4
