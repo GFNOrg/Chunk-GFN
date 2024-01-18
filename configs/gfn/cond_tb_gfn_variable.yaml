@@ -1,4 +1,4 @@
-_target_: chunkgfn.gfn.cond_tb_gfn.Cond_TBGFN
+_target_: chunkgfn.gfn.cond_tb_gfn_variable.Cond_TBGFN_Variable
 
 optimizer:
   _target_: torch.optim.Adam
@@ -11,8 +11,8 @@ forward_model:
   _target_: chunkgfn.models.rnn.RNN
   num_layers: 1
   hidden_dim: 128
-  input_vocab_size: 3
-  state_vocab_size: 3
+  input_vocab_size: 4
+  state_vocab_size: 4
   act:
     _target_: torch.nn.ReLU
 
@@ -20,7 +20,7 @@ partition_model:
   _target_: chunkgfn.models.rnn.logZ
   num_layers: 1
   hidden_dim: 128
-  input_vocab_size: 3
+  input_vocab_size: 4
   act:
     _target_: torch.nn.ReLU
 

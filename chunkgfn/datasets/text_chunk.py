@@ -60,16 +60,36 @@ def generate_sentence(max_len):
 
 class ChunkDataset(Dataset):
     def __init__(self, max_len=30, num_sentences=1000):
-        self.vocab2token = {k: i for i, k in enumerate(["A", "B", "C"])}
-        self.token2vocab = {i: k for i, k in enumerate(["A", "B", "C"])}
+        self._vocab = ["<EOS>", "A", "B", "C"]
+        self.vocab2token = {k: i for i, k in enumerate(self.vocab)}
+        self.token2vocab = {i: k for i, k in enumerate(self.vocab)}
         self.num_sentences = num_sentences
         self.data = [generate_sentence(max_len) for _ in range(num_sentences)]
 
     def __len__(self):
         return self.num_sentences
 
+    @property
+    def vocab(self):
+        return self._vocab
+
+    @property
+    def vocab_size(self):
+        return len(self._vocab)
+
+    @property
+    def eos_token_idx(self):
+        return self.vocab2token["<EOS>"]
+
+    @vocab.setter
+    def add_to_vocab(self, token):
+        if token not in self.vocab:
+            self._vocab.append(token)
+
     def __getitem__(self, i):
-        vec = torch.tensor([self.vocab2token[k] for k in self.data[i]])
+        vec = torch.tensor(
+            [self.vocab2token[k] for k in self.data[i]] + [self.vocab2token["<EOS>"]]
+        )
         out = torch.zeros((len(vec), len(self.vocab2token)))
         out[range(len(vec)), vec] = 1
         return out

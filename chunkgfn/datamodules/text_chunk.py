@@ -1,8 +1,8 @@
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
+import torch
 from lightning import LightningDataModule
 from torch.utils.data import DataLoader, Dataset
-from torchvision.datasets import MNIST
 
 from chunkgfn.datasets.text_chunk import ChunkDataset
 
@@ -73,9 +73,9 @@ class ChunkModule(LightningDataModule):
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(logger=False)
 
-        self.data_train: Optional[Dataset] = None
-        self.data_val: Optional[Dataset] = None
-        self.data_test: Optional[Dataset] = None
+        self.data_train: Optional[ChunkDataset] = None
+        self.data_val: Optional[ChunkDataset] = None
+        self.data_test: Optional[ChunkDataset] = None
 
     def setup(self, stage: Optional[str] = None) -> None:
         """Load data. Set variables: `self.data_train`, `self.data_val`, `self.data_test`.
@@ -104,3 +104,52 @@ class ChunkModule(LightningDataModule):
             pin_memory=self.hparams.pin_memory,
             shuffle=True,
         )
+
+    def batch_token2vocab(self, states: torch.Tensor):
+        """Convert batch of token indices to list of strings.
+        Args:
+            states (torch.Tensor[batch_size, max_len, state_vocab_dim]): Batch of token indices.
+        """
+        strings = []
+        for state in states:
+            # Cut the state before it arrives at [-1,-1,...]
+            nonzero = (state == -1).nonzero()
+            if len(nonzero) > 0:
+                state = state[: nonzero[0][0]]
+
+            state = torch.argmax(state, dim=-1).tolist()
+            # Convert token indices to strings
+            strings.append(
+                "".join(
+                    [
+                        self.data_train.token2vocab[t]
+                        for t in state
+                        if t != self.data_train.eos_token_idx
+                    ]
+                )
+            )
+        return strings
+
+    def compute_logreward(self, inputs: torch.Tensor, states: torch.Tensor):
+        """Compute the logreward for a batch of sentences.
+        Args:
+            inputs (torch.Tensor[batch_size, max_len, input_vocab_dim]): Batch of inputs.
+            states (torch.Tensor[batch_size, max_len, state_vocab_dim]): Batch of states.
+        """
+        # Convert token indices to strings
+        state_strings = self.batch_token2vocab(states)
+        input_strings = self.batch_token2vocab(inputs)
+        # Compute reward
+        logrewards = []
+        for inp, state in zip(input_strings, state_strings):
+            str_len = max(len(inp), len(state))
+            logreward = 0
+            for i in range(str_len):
+                if i < len(inp) and i < len(state) and inp[i] == state[i]:
+                    logreward += 0
+                else:
+                    logreward -= 1
+            logrewards.append(logreward)
+        logrewards = torch.tensor(logrewards)
+
+        return logrewards
