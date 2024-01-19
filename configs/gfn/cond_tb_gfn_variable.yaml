@@ -34,7 +34,7 @@ epsilon_scheduler:
   max_epochs: ${trainer.max_epochs}
 
 replay_buffer:
-  _target_: chunkgfn.replay_buffer.random_replay.RandomReplay
+  _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
   capacity: 10000
 
 lr: 3e-4

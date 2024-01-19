@@ -1,6 +1,7 @@
 from typing import Any, Tuple
 
 import torch
+import wandb
 from lightning import LightningModule
 from torch import nn
 from torch.distributions import Categorical
@@ -154,7 +155,7 @@ class Cond_TBGFN_Variable(LightningModule):
 
         return trajectories, actions, dones, state
 
-    def compute_loss(self, x, trajectories, actions, dones, final_state):
+    def compute_loss(self, x, trajectories, actions, dones, logreward):
         log_pf = 0
         log_pb = 0
         for t in range(trajectories.shape[1]):
@@ -164,9 +165,8 @@ class Cond_TBGFN_Variable(LightningModule):
             log_pf += (Categorical(logits=p_f_s).log_prob(act)) * (~dones[:, t] + 0)
 
         logZ = self.partition_model(x).squeeze(-1)
-        logreward = self.trainer.datamodule.compute_logreward(x, final_state).to(logZ)
         loss = self.mse_loss(logZ + log_pf, logreward + log_pb)
-        return loss, logreward, logZ
+        return loss, logZ
 
     def sample(
         self,
@@ -181,7 +181,10 @@ class Cond_TBGFN_Variable(LightningModule):
         trajectories, actions, dones, final_state = self(
             x, eos_token_idx, state_vocab_size, train, epsilon, temperature
         )
-        return x, trajectories, actions, dones, final_state
+        logreward = self.trainer.datamodule.compute_logreward(x, final_state).to(
+            final_state
+        )
+        return x, trajectories, actions, dones, final_state, logreward
 
     def update_library(self):
         """Update the library. This function will do the following, in the following order:
@@ -220,7 +223,7 @@ class Cond_TBGFN_Variable(LightningModule):
         else:
             temperature = None
 
-        x, trajectories, actions, dones, final_state = self.sample(
+        x, trajectories, actions, dones, final_state, logreward = self.sample(
             train_batch,
             eos_token_idx,
             state_vocab_size,
@@ -230,17 +233,18 @@ class Cond_TBGFN_Variable(LightningModule):
         )
         if self.replay_buffer is not None:
             with torch.no_grad():
-                self.replay_buffer.add(x, trajectories, actions, dones, final_state)
+                self.replay_buffer.add(
+                    x, trajectories, actions, dones, final_state, logreward
+                )
                 (
                     x,
                     trajectories,
                     actions,
                     dones,
                     final_state,
+                    logreward,
                 ) = self.replay_buffer.sample(x.shape[0])
-        loss, logreward, logZ = self.compute_loss(
-            x, trajectories, actions, dones, final_state
-        )
+        loss, logZ = self.compute_loss(x, trajectories, actions, dones, logreward)
 
         self.train_loss(loss)
         self.train_logreward(logreward.mean())
@@ -267,6 +271,22 @@ class Cond_TBGFN_Variable(LightningModule):
             self.log(
                 "temperature", epsilon, on_step=False, on_epoch=True, prog_bar=False
             )
+
+        generated_samples = self.trainer.datamodule.batch_token2vocab(final_state)
+        input_samples = self.trainer.datamodule.batch_token2vocab(x)
+
+        rows = []
+        for i, (input_sample, generated_sample) in enumerate(
+            zip(input_samples, generated_samples)
+        ):
+            rows.append([input_sample, generated_sample, logreward[i].item()])
+        self.logger.experiment.log(
+            {
+                "text_samples": wandb.Table(
+                    columns=["input_sample", "generated_sample", "logreward"], data=rows
+                )
+            }
+        )
 
         return loss
 
