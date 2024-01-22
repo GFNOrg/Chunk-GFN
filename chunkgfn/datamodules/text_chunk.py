@@ -2,7 +2,11 @@ from typing import Any, Dict, Optional
 
 import torch
 from lightning import LightningDataModule
-from torch.utils.data import DataLoader, Dataset
+from tokenizers import Tokenizer
+from tokenizers.models import BPE
+from tokenizers.pre_tokenizers import Whitespace
+from tokenizers.trainers import BpeTrainer
+from torch.utils.data import DataLoader
 
 from chunkgfn.datasets.text_chunk import ChunkDataset
 
@@ -91,6 +95,7 @@ class ChunkModule(LightningDataModule):
         # load and split datasets only if not loaded already
         if not self.data_train and not self.data_val and not self.data_test:
             self.data_train = ChunkDataset(**self.hparams.dataset)
+            self.data_val = ChunkDataset(**self.hparams.dataset)
 
     def train_dataloader(self) -> DataLoader[Any]:
         """Create and return the train dataloader.
@@ -105,10 +110,24 @@ class ChunkModule(LightningDataModule):
             shuffle=True,
         )
 
-    def batch_token2vocab(self, states: torch.Tensor):
+    def val_dataloader(self) -> DataLoader[Any]:
+        """Create and return the train dataloader.
+
+        :return: The train dataloader.
+        """
+        return DataLoader(
+            dataset=self.data_val,
+            batch_size=self.hparams.batch_size,
+            num_workers=self.hparams.num_workers,
+            pin_memory=self.hparams.pin_memory,
+            shuffle=True,
+        )
+
+    def batch_token2vocab(self, states: torch.Tensor, inlcude_eos: bool = False):
         """Convert batch of token indices to list of strings.
         Args:
             states (torch.Tensor[batch_size, max_len, state_vocab_dim]): Batch of token indices.
+            inlcude_eos (bool): Whether to include the end-of-string token in the output.
         """
         strings = []
         for state in states:
@@ -124,10 +143,27 @@ class ChunkModule(LightningDataModule):
                     [
                         self.data_train.token2vocab[t]
                         for t in state
-                        if t != self.data_train.eos_token_idx
+                        if t != self.data_train.eos_token_idx or inlcude_eos
                     ]
                 )
             )
+        return strings
+
+    def batch_token2vocablist(self, states: torch.Tensor):
+        """Convert batch of token indices to list of strings.
+        Args:
+            states (torch.Tensor[batch_size, max_len, state_vocab_dim]): Batch of token indices.
+        """
+        strings = []
+        for state in states:
+            # Cut the state before it arrives at [-1,-1,...]
+            nonzero = (state == -1).nonzero()
+            if len(nonzero) > 0:
+                state = state[: nonzero[0][0]]
+
+            state = torch.argmax(state, dim=-1).tolist()
+            # Convert token indices to strings
+            strings.append([self.data_train.token2vocab[t] for t in state])
         return strings
 
     def compute_logreward(self, inputs: torch.Tensor, states: torch.Tensor):
@@ -137,8 +173,8 @@ class ChunkModule(LightningDataModule):
             states (torch.Tensor[batch_size, max_len, state_vocab_dim]): Batch of states.
         """
         # Convert token indices to strings
-        state_strings = self.batch_token2vocab(states)
-        input_strings = self.batch_token2vocab(inputs)
+        state_strings = self.batch_token2vocab(states, inlcude_eos=False)
+        input_strings = self.batch_token2vocab(inputs, inlcude_eos=False)
         # Compute reward
         logrewards = []
         for inp, state in zip(input_strings, state_strings):
@@ -153,3 +189,48 @@ class ChunkModule(LightningDataModule):
         logrewards = torch.tensor(logrewards)
 
         return logrewards
+
+    def chunk(self, final_states: torch.Tensor):
+        """Find the most valuable token from the corpus.
+        Args:
+            final_states (torch.Tensor[batch_size, max_len, state_vocab_dim]): Batch of final states.
+        """
+        # Convert token indices to strings
+        state_strings = self.batch_token2vocab(final_states, inlcude_eos=False)
+        # Apply BPE algorithm to the state_strings and get the most frequent token
+        tokenizer = Tokenizer(BPE(self.data_train.vocab, [], unk_token="[UNK]"))
+        tokenizer.pre_tokenizer = Whitespace()
+        trainer = BpeTrainer(vocab_size=self.data_train.vocab_size)
+        tokenizer.train_from_iterator(state_strings, trainer=trainer)
+        new_token = list(
+            set(tokenizer.get_vocab().keys()).difference(
+                set(self.data_train.vocab.keys())
+            )
+        )[0]
+        self.data_train.add_to_vocab(new_token)
+
+    def get_parent_actions(self, states: torch.Tensor):
+        """Get the parent actions of a batch of states.
+        Args:
+            states (torch.Tensor[batch_size, max_len, state_vocab_dim]): Batch of states.
+        """
+        # Convert token indices to strings
+        state_strings = self.batch_token2vocablist(states)
+        # Get the parent actions
+        parent_actions = torch.zeros(
+            states.shape[0], states.shape[-1], dtype=torch.int64
+        )
+        for i, state in enumerate(state_strings):
+            last_token = state[-1]
+            if last_token == "<EOS>":
+                parent_actions_ = ["<EOS>"]
+            else:
+                parent_actions_ = set()
+                for j in range(len(state)):
+                    parent_actions_.add("".join(state[-j - 1 :]))
+                parent_actions_ = list(
+                    parent_actions_.intersection(set(self.data_train.vocab))
+                )
+            parent_actions_ = [self.data_train.vocab[a] for a in parent_actions_]
+            parent_actions[i, parent_actions_] = 1
+        return parent_actions
