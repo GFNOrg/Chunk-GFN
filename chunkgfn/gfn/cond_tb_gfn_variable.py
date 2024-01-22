@@ -2,6 +2,7 @@ from typing import Any, Tuple
 
 import torch
 import wandb
+from einops import rearrange, repeat
 from lightning import LightningModule
 from torch import nn
 from torch.distributions import Categorical
@@ -132,7 +133,7 @@ class Cond_TBGFN_Variable(LightningModule):
             else:
                 cat = Categorical(logits=p_f_s)
             act = cat.sample()
-            action = torch.zeros((bs, dim)).to(state)
+            action = torch.zeros((bs, state_vocab_size)).to(state)
             action.scatter_(-1, act.unsqueeze(-1), 1)
 
             # Update the state by filling the current timestep with the sampled action only if it doesn't contain EOS token
@@ -156,13 +157,36 @@ class Cond_TBGFN_Variable(LightningModule):
         return trajectories, actions, dones, state
 
     def compute_loss(self, x, trajectories, actions, dones, logreward):
+        """Compute the loss for the model.
+        Args:
+            x (torch.Tensor[batch_size, seq_length, input_dim]): Conditioning vector.
+            trajectories (torch.Tensor[batch_size, trajectory_length, seq_length, state_dim]): Trajectories for each sample in the batch.
+            actions (torch.Tensor[batch_size, trajectory_length, state_dim]): Actions for each sample in the batch.
+            dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
+            logreward (torch.Tensor[batch_size]): Log reward.
+        Return:
+            loss (torch.Tensor[1]): Loss.
+            logZ (torch.Tensor[1]): Log partition function.
+        """
         log_pf = 0
         log_pb = 0
         for t in range(trajectories.shape[1]):
             state = trajectories[:, t]
-            p_f_s = self.forward_model(x, state)
+            logp_f_s = self.forward_model(x, state)
+
             act = torch.argmax(actions[:, t], dim=-1)
-            log_pf += (Categorical(logits=p_f_s).log_prob(act)) * (~dones[:, t] + 0)
+            log_pf += (Categorical(logits=logp_f_s).log_prob(act)) * (~dones[:, t] + 0)
+            if t > 0:
+                backward_actions = self.trainer.datamodule.get_parent_actions(state)
+                logp_b_s = torch.where(
+                    backward_actions == 1, torch.tensor(0.0), -torch.inf
+                ).to(logp_f_s)
+                act = torch.argmax(actions[:, t - 1], dim=-1)
+                log_pb += torch.where(
+                    dones[:, t],
+                    torch.tensor(0.0),
+                    Categorical(logits=logp_b_s).log_prob(act),
+                )
 
         logZ = self.partition_model(x).squeeze(-1)
         loss = self.mse_loss(logZ + log_pf, logreward + log_pb)
@@ -178,6 +202,8 @@ class Cond_TBGFN_Variable(LightningModule):
         temperature: float = 0.0,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = batch
+        x = repeat(x, "b ... -> b n ...", n=self.hparams.n_trajectories)
+        x = rearrange(x, "b n ... -> (b n) ...")
         trajectories, actions, dones, final_state = self(
             x, eos_token_idx, state_vocab_size, train, epsilon, temperature
         )
@@ -195,24 +221,24 @@ class Cond_TBGFN_Variable(LightningModule):
         """
 
         # Pick a number of generated samples from the replay buffer
-        _, final_states = self.replay_buffer.sample(self.hparams.n_samples)
-        # Decode the samples
-        final_states = torch.argmax(final_states, dim=-1)
+        _, _, _, _, final_states, _ = self.replay_buffer.sample(self.hparams.n_samples)
+
         # Get the most valuable token
+        self.trainer.datamodule.chunk(final_states)
 
         # Update model's weights
-        self.forward_model.input_embedding = expand_linear_layer(
+        self.forward_model.state_embedding = expand_linear_layer(
             self.forward_model.state_embedding,
             new_in_dim=self.forward_model.state_embedding.in_features + 1,
         )
-        self.forward_model.input_embedding = expand_linear_layer(
+        self.forward_model.logits_layer = expand_linear_layer(
             self.forward_model.logits_layer,
             new_out_dim=self.forward_model.logits_layer.out_features + 1,
         )
 
     def training_step(self, train_batch, batch_idx) -> Any:
-        eos_token_idx = self.trainer.train_dataloader.dataset.eos_token_idx
-        state_vocab_size = self.trainer.train_dataloader.dataset.vocab_size
+        eos_token_idx = self.trainer.datamodule.data_train.eos_token_idx
+        state_vocab_size = self.trainer.datamodule.data_train.vocab_size
 
         if self.epsilon_scheduler is not None:
             epsilon = self.epsilon_scheduler.step(self.current_epoch)
@@ -231,19 +257,36 @@ class Cond_TBGFN_Variable(LightningModule):
             epsilon=epsilon,
             temperature=temperature,
         )
+        batch_size = x.shape[0]
+        nsamples_replay = int(batch_size * self.hparams.ratio_from_replay_buffer)
+
         if self.replay_buffer is not None:
             with torch.no_grad():
                 self.replay_buffer.add(
-                    x, trajectories, actions, dones, final_state, logreward
+                    input=x,
+                    trajectories=trajectories,
+                    actions=actions,
+                    dones=dones,
+                    final_state=final_state,
+                    logreward=logreward,
                 )
-                (
-                    x,
-                    trajectories,
-                    actions,
-                    dones,
-                    final_state,
-                    logreward,
-                ) = self.replay_buffer.sample(x.shape[0])
+                samples = self.replay_buffer.sample(nsamples_replay)
+
+            for key in samples.keys():
+                samples[key] = samples[key].to(x.device)
+
+            indices = torch.randperm(len(x))[: batch_size - nsamples_replay]
+            x = torch.cat([x[indices], samples["input"]], dim=0)
+            trajectories = torch.cat(
+                [trajectories[indices], samples["trajectories"]], dim=0
+            )
+            actions = torch.cat([actions[indices], samples["actions"]], dim=0)
+            dones = torch.cat([dones[indices], samples["dones"]], dim=0)
+            final_state = torch.cat(
+                [final_state[indices], samples["final_state"]], dim=0
+            )
+            logreward = torch.cat([logreward[indices], samples["logreward"]], dim=0)
+
         loss, logZ = self.compute_loss(x, trajectories, actions, dones, logreward)
 
         self.train_loss(loss)
@@ -279,21 +322,72 @@ class Cond_TBGFN_Variable(LightningModule):
         for i, (input_sample, generated_sample) in enumerate(
             zip(input_samples, generated_samples)
         ):
-            rows.append([input_sample, generated_sample, logreward[i].item()])
+            rows.append(
+                [
+                    input_sample,
+                    generated_sample,
+                    logreward[i].item(),
+                    "|".join(self.trainer.datamodule.data_train.vocab.keys()),
+                ]
+            )
         self.logger.experiment.log(
             {
                 "text_samples": wandb.Table(
-                    columns=["input_sample", "generated_sample", "logreward"], data=rows
+                    columns=[
+                        "input_sample",
+                        "generated_sample",
+                        "logreward",
+                        "library",
+                    ],
+                    data=rows,
                 )
             }
         )
+        self.log(
+            "library_size",
+            state_vocab_size,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
+        self.log(
+            "replay_buffer_size",
+            len(self.replay_buffer),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
+        self.log(
+            "replay_buffer_mean_logreward",
+            self.replay_buffer.storage["logreward"].mean(),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
 
+        if (
+            self.current_epoch > 0
+            and self.current_epoch % self.hparams.library_update_frequency == 0
+            and batch_idx == 0
+        ):
+            self.update_library()
         return loss
 
     def validation_step(self, val_batch, batch_idx) -> Any:
-        x, state = self.sample(val_batch, train=False, epsilon=None, temperature=None)
+        eos_token_idx = self.trainer.datamodule.data_train.eos_token_idx
+        state_vocab_size = self.trainer.datamodule.data_train.vocab_size
 
-        loss, logreward, logZ = self.compute_loss(x, state)
+        x, trajectories, actions, dones, final_state, logreward = self.sample(
+            val_batch,
+            eos_token_idx,
+            state_vocab_size,
+            train=False,
+            epsilon=None,
+            temperature=None,
+        )
+
+        loss, logZ = self.compute_loss(x, trajectories, actions, dones, logreward)
+
         self.val_loss(loss)
         self.val_logreward(logreward.mean())
         self.val_logZ(logZ.mean())
@@ -312,4 +406,33 @@ class Cond_TBGFN_Variable(LightningModule):
             on_step=False,
             on_epoch=True,
             prog_bar=True,
+        )
+
+        generated_samples = self.trainer.datamodule.batch_token2vocab(final_state)
+        input_samples = self.trainer.datamodule.batch_token2vocab(x)
+
+        rows = []
+        for i, (input_sample, generated_sample) in enumerate(
+            zip(input_samples, generated_samples)
+        ):
+            rows.append(
+                [
+                    input_sample,
+                    generated_sample,
+                    logreward[i].item(),
+                    "|".join(self.trainer.datamodule.data_train.vocab.keys()),
+                ]
+            )
+        self.logger.experiment.log(
+            {
+                "val/text_samples": wandb.Table(
+                    columns=[
+                        "input_sample",
+                        "generated_sample",
+                        "logreward",
+                        "library",
+                    ],
+                    data=rows,
+                )
+            }
         )
