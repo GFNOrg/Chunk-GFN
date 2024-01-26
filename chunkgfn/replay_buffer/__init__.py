@@ -104,7 +104,13 @@ class ReplayBuffer(ABC):
 
         # Remove duplicates indicated by input and final_state jointly
         indices = get_ix_unique(
-            torch.cat([self.storage["input"], self.storage["final_state"]], dim=1)
+            torch.cat(
+                [
+                    self.storage["input"],
+                    self.storage["final_state"],
+                ],
+                dim=-1,
+            )
         )
         for key in self.storage.keys():
             self.storage[key] = self.storage[key][indices]
