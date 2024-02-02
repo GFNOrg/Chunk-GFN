@@ -17,6 +17,7 @@ class Cond_TBGFN_Variable(LightningModule):
     def __init__(
         self,
         forward_model: torch.nn.Module,
+        backward_model: torch.nn.Module,
         partition_model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
@@ -30,6 +31,7 @@ class Cond_TBGFN_Variable(LightningModule):
         self.save_hyperparameters(logger=False)
 
         self.forward_model = forward_model
+        self.backward_model = backward_model
         self.partition_model = partition_model
         self.criterion = criterion
         self.epsilon_scheduler = epsilon_scheduler
@@ -159,6 +161,92 @@ class Cond_TBGFN_Variable(LightningModule):
         dones = torch.stack(dones, dim=1)
 
         return trajectories, actions, dones, state
+    
+
+    def backward(
+        self,
+        x: torch.Tensor,
+        eos_token_idx: int,
+        state_vocab_size: int,
+        train: bool = True,
+        epsilon: float | None = None,
+        temperature: float | None = None,
+    ):
+        """Sample trajectories conditioned on inputs.
+        Args:
+            x (torch.Tensor[batch_size, seq_length, input_dim]): Conditioning vector.
+            eos_token_idx (int): Index of the EOS token in the vocabulary.
+            state_vocab_size (int): Size of the state vocabulary.
+            train (bool): Whether it's during train or eval. This makes sure that we don't sample off-policy during inference.
+            epsilon (float|None): Epsilon value for epsilon greedy.
+            temperature (float|None): Temperature value for tempering.
+        Return:
+            trajectories (torch.Tensor[batch_size, trajectory_length, seq_length, state_dim]): Trajectories for each sample in the batch.
+            actions (torch.Tensor[batch_size, trajectory_length, state_dim]): Actions for each sample in the batch.
+            dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
+            state (torch.Tensor[batch_size, seq_length, state_dim]): Final state.
+        """
+        bs, max_len, dim = x.shape
+        state = -torch.ones(bs, max_len, state_vocab_size).to(x)
+        eos_token = torch.zeros(state_vocab_size).to(x)
+        eos_token[eos_token_idx] = 1
+        done = torch.zeros((bs)).to(x).bool()
+
+        # Start unrolling the trajectories
+        actions = []
+        trajectories = []
+        dones = []
+
+        for t in range(max_len):
+            p_f_s = self.forward_model(x, state)
+            uniform_dist_probs = torch.ones_like(p_f_s).to(p_f_s)
+
+            valid_actions_mask = self.trainer.datamodule.get_invalid_actions_mask(state)
+            p_f_s = torch.where(valid_actions_mask, p_f_s, torch.tensor(-1e6))
+            uniform_dist_probs = torch.where(
+                valid_actions_mask, uniform_dist_probs, torch.tensor(0)
+            )
+
+            if train:
+                if temperature is not None:
+                    logits = p_f_s / (1e-6 + temperature)
+                else:
+                    logits = p_f_s
+                if epsilon is not None:
+                    probs = torch.softmax(logits, dim=-1)
+                    uniform_dist_probs = uniform_dist_probs / uniform_dist_probs.sum(
+                        dim=-1, keepdim=True
+                    )
+                    probs = (1 - epsilon) * probs + epsilon * uniform_dist_probs
+                    cat = Categorical(probs=probs)
+                else:
+                    cat = Categorical(logits=logits)
+            else:
+                cat = Categorical(logits=p_f_s)
+
+            act = cat.sample()
+            action = torch.zeros((bs, state_vocab_size)).to(state)
+            action.scatter_(-1, act.unsqueeze(-1), 1)
+
+            # Update the state by filling the current timestep with the sampled action only if it doesn't contain EOS token
+            new_state = state.clone()
+            if t > 0:
+                done |= torch.all(state[:, t - 1] == eos_token.unsqueeze(0), dim=1)
+                new_state[:, t] = torch.where(done.unsqueeze(1), state[:, t], action)
+            else:
+                new_state[:, t] = action
+
+            actions.append(action)
+            trajectories.append(state)
+            dones.append(done.clone())
+
+            state = new_state.clone()
+
+        trajectories = torch.stack(trajectories, dim=1)
+        actions = torch.stack(actions, dim=1)
+        dones = torch.stack(dones, dim=1)
+
+        return trajectories, actions, dones, state
 
     def compute_loss(self, x, trajectories, actions, dones, logreward):
         """Compute the loss for the model.
@@ -197,7 +285,7 @@ class Cond_TBGFN_Variable(LightningModule):
 
         return loss, logZ
 
-    def sample(
+    def sample_forward(
         self,
         batch: torch.Tensor,
         eos_token_idx: int,
@@ -218,6 +306,7 @@ class Cond_TBGFN_Variable(LightningModule):
             / self.hparams.reward_temperature
         )
         return x, trajectories, actions, dones, final_state, logreward
+    
 
     def update_library(self):
         """Update the library. This function will do the following, in the following order:

@@ -69,40 +69,30 @@ class ReplayBuffer(ABC):
         for key in ["trajectories", "actions", "final_state"]:
             self.storage[key] = pad_dim(self.storage[key], actions.shape[-1])
 
-        # Concatenate all tensors
-        if len(self) == 0:
-            self.storage["input"] = input
-            self.storage["trajectories"] = trajectories
-            self.storage["actions"] = actions
-            self.storage["dones"] = dones
-            self.storage["final_state"] = final_state
-            self.storage["logreward"] = logreward
-        else:
-            self.storage["input"] = torch.cat([self.storage["input"], input])
-            self.storage["trajectories"] = torch.cat(
-                [self.storage["trajectories"], trajectories]
-            )
-            self.storage["actions"] = torch.cat([self.storage["actions"], actions])
-            self.storage["dones"] = torch.cat([self.storage["dones"], dones])
-            self.storage["final_state"] = torch.cat(
-                [self.storage["final_state"], final_state]
-            )
-            self.storage["logreward"] = torch.cat(
-                [self.storage["logreward"], logreward]
-            )
+        dict_curr_batch = { "input": input,
+            "trajectories": trajectories,
+            "actions": actions,
+            "dones": dones,
+            "final_state": final_state,
+            "logreward": logreward}
+        for i in range(len(final_state)):
+            if dict_curr_batch['logreward'][i] > self.storage['logreward'][0]: # This assumes that the replay buffer is ordered in ascending log-reward ! 
+                delta = dist(input[i], dict_curr_batch['final_state'][i], self.storage) # size : (len(replay_buffer))
+                if min(delta) > self.thresh_dist : 
+                    self.storage = {key: value[1:] for (key, value) in self.storage.items()}
+                    ix = torch.searchsorted(self.storage('logreward'),dict_curr_batch['logreward'][i] )
+                    for key in self.storage.keys():
+                        self.storage[key] = torch.cat((self.storage[key][:ix] ,  dict_curr_batch[key][i:i+1], self.storage[key][ix:] ) , axis = 0 )
+                else: 
+                    #Find nearest neighbor
+                    ix_nn = torch.argmin(delta)
+                    if self.storage['logreward'][ix_nn] < logreward[i]:  
+                        for key in self.storage.keys():
+                            self.storage[key][ix_nn] = self.dict_curr_batch[key][i]
 
-        # Remove duplicates indicated by input and final_state jointly
-        indices = get_ix_unique(
-            torch.cat(
-                [
-                    self.storage["input"],
-                    self.storage["final_state"],
-                ],
-                dim=-1,
-            )
-        )
-        for key in self.storage.keys():
-            self.storage[key] = self.storage[key][indices]
+
+                    
+
 
         # Keep only the a maximum of self.capacity samples
         self.keep_capacity()
