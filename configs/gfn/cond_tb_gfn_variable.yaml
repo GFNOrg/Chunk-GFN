@@ -38,9 +38,10 @@ replay_buffer:
   capacity: 5000
 
 lr: 3e-4
-partition_lr: 3e-4
+partition_lr: 5e-4
 monitor: train/loss
 n_samples: 1000 # Number of samples for the tokenizer
 library_update_frequency: 20 # Number of epochs between library updates
-ratio_from_replay_buffer: 0.35 # Ratio of samples from replay buffer
+ratio_from_replay_buffer: 0.55 # Ratio of samples from replay buffer
 n_trajectories: 30 # Number of trajectories to sample per input
+reward_temperature: 1.0 # Temperature for the reward

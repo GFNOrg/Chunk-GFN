@@ -36,15 +36,19 @@ class Cond_TBGFN_Variable(LightningModule):
         self.temperature_scheduler = temperature_scheduler
         self.replay_buffer = replay_buffer
 
+        self.automatic_optimization = False
+
         self.mse_loss = nn.MSELoss()
 
         self.train_loss = MeanMetric()
         self.train_logreward = MeanMetric()
         self.train_logZ = MeanMetric()
+        self.train_accuracy = MeanMetric()
 
         self.val_loss = MeanMetric()
         self.val_logreward = MeanMetric()
         self.val_logZ = MeanMetric()
+        self.val_accuracy = MeanMetric()
 
     def configure_optimizers(self):
         params = [
@@ -109,12 +113,11 @@ class Cond_TBGFN_Variable(LightningModule):
             p_f_s = self.forward_model(x, state)
             uniform_dist_probs = torch.ones_like(p_f_s).to(p_f_s)
 
-            if t == max_len - 1:
-                # If we're at the last timestep, we need to make sure that we sample ONLY the EOS token
-                p_f_s[..., :eos_token_idx] = -1e6
-                p_f_s[..., eos_token_idx + 1 :] = -1e6
-                uniform_dist_probs[..., :eos_token_idx] = 0
-                uniform_dist_probs[..., eos_token_idx + 1 :] = 0
+            valid_actions_mask = self.trainer.datamodule.get_invalid_actions_mask(state)
+            p_f_s = torch.where(valid_actions_mask, p_f_s, torch.tensor(-1e6))
+            uniform_dist_probs = torch.where(
+                valid_actions_mask, uniform_dist_probs, torch.tensor(0)
+            )
 
             if train:
                 if temperature is not None:
@@ -132,6 +135,7 @@ class Cond_TBGFN_Variable(LightningModule):
                     cat = Categorical(logits=logits)
             else:
                 cat = Categorical(logits=p_f_s)
+
             act = cat.sample()
             action = torch.zeros((bs, state_vocab_size)).to(state)
             action.scatter_(-1, act.unsqueeze(-1), 1)
@@ -148,7 +152,7 @@ class Cond_TBGFN_Variable(LightningModule):
             trajectories.append(state)
             dones.append(done.clone())
 
-            state = new_state
+            state = new_state.clone()
 
         trajectories = torch.stack(trajectories, dim=1)
         actions = torch.stack(actions, dim=1)
@@ -190,6 +194,7 @@ class Cond_TBGFN_Variable(LightningModule):
 
         logZ = self.partition_model(x).squeeze(-1)
         loss = self.mse_loss(logZ + log_pf, logreward + log_pb)
+
         return loss, logZ
 
     def sample(
@@ -202,13 +207,15 @@ class Cond_TBGFN_Variable(LightningModule):
         temperature: float = 0.0,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = batch
+        # Repeat the input n_trajectories times
         x = repeat(x, "b ... -> b n ...", n=self.hparams.n_trajectories)
         x = rearrange(x, "b n ... -> (b n) ...")
         trajectories, actions, dones, final_state = self(
             x, eos_token_idx, state_vocab_size, train, epsilon, temperature
         )
-        logreward = self.trainer.datamodule.compute_logreward(x, final_state).to(
-            final_state
+        logreward = (
+            self.trainer.datamodule.compute_logreward(x, final_state).to(final_state)
+            / self.hparams.reward_temperature
         )
         return x, trajectories, actions, dones, final_state, logreward
 
@@ -221,10 +228,12 @@ class Cond_TBGFN_Variable(LightningModule):
         """
 
         # Pick a number of generated samples from the replay buffer
-        _, _, _, _, final_states, _ = self.replay_buffer.sample(self.hparams.n_samples)
-
+        samples = self.replay_buffer.sample(self.hparams.n_samples)
         # Get the most valuable token
-        self.trainer.datamodule.chunk(final_states)
+        self.trainer.datamodule.chunk(samples["final_state"])
+
+        # Get the past optimizer state
+        optimizer_states = [opt.state_dict() for opt in self.trainer.optimizers]
 
         # Update model's weights
         self.forward_model.state_embedding = expand_linear_layer(
@@ -235,6 +244,9 @@ class Cond_TBGFN_Variable(LightningModule):
             self.forward_model.logits_layer,
             new_out_dim=self.forward_model.logits_layer.out_features + 1,
         )
+
+        # Reinitialize the optimizer
+        self.trainer.optimizers = [self.configure_optimizers()["optimizer"]]
 
     def training_step(self, train_batch, batch_idx) -> Any:
         eos_token_idx = self.trainer.datamodule.data_train.eos_token_idx
@@ -275,6 +287,7 @@ class Cond_TBGFN_Variable(LightningModule):
             for key in samples.keys():
                 samples[key] = samples[key].to(x.device)
 
+            # Concatenate samples from the replay buffer and the on-policy samples
             indices = torch.randperm(len(x))[: batch_size - nsamples_replay]
             x = torch.cat([x[indices], samples["input"]], dim=0)
             trajectories = torch.cat(
@@ -288,15 +301,24 @@ class Cond_TBGFN_Variable(LightningModule):
             logreward = torch.cat([logreward[indices], samples["logreward"]], dim=0)
 
         loss, logZ = self.compute_loss(x, trajectories, actions, dones, logreward)
+        accuracy = self.trainer.datamodule.compute_accuracy(x, final_state)
 
         self.train_loss(loss)
         self.train_logreward(logreward.mean())
         self.train_logZ(logZ.mean())
+        self.train_accuracy(accuracy.mean())
 
         self.log("train/loss", self.train_loss, on_step=True, prog_bar=True)
         self.log(
             "train/logreward",
             self.train_logreward,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
+        self.log(
+            "train/accuracy",
+            self.train_accuracy,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
@@ -330,19 +352,20 @@ class Cond_TBGFN_Variable(LightningModule):
                     "|".join(self.trainer.datamodule.data_train.vocab.keys()),
                 ]
             )
-        self.logger.experiment.log(
-            {
-                "text_samples": wandb.Table(
-                    columns=[
-                        "input_sample",
-                        "generated_sample",
-                        "logreward",
-                        "library",
-                    ],
-                    data=rows,
-                )
-            }
-        )
+        if batch_idx % (batch_size // 2) == 0:
+            self.logger.experiment.log(
+                {
+                    "text_samples": wandb.Table(
+                        columns=[
+                            "input_sample",
+                            "generated_sample",
+                            "logreward",
+                            "library",
+                        ],
+                        data=rows,
+                    )
+                }
+            )
         self.log(
             "library_size",
             state_vocab_size,
@@ -364,13 +387,18 @@ class Cond_TBGFN_Variable(LightningModule):
             on_epoch=True,
             prog_bar=True,
         )
-
         if (
             self.current_epoch > 0
             and self.current_epoch % self.hparams.library_update_frequency == 0
             and batch_idx == 0
         ):
             self.update_library()
+
+        else:
+            opt = self.optimizers()
+            opt.zero_grad()
+            self.manual_backward(loss)
+            opt.step()
         return loss
 
     def validation_step(self, val_batch, batch_idx) -> Any:
@@ -387,15 +415,24 @@ class Cond_TBGFN_Variable(LightningModule):
         )
 
         loss, logZ = self.compute_loss(x, trajectories, actions, dones, logreward)
+        accuracy = self.trainer.datamodule.compute_accuracy(x, final_state)
 
         self.val_loss(loss)
         self.val_logreward(logreward.mean())
         self.val_logZ(logZ.mean())
+        self.val_accuracy(accuracy.mean())
 
         self.log("val/loss", self.val_loss, on_step=True, prog_bar=True)
         self.log(
             "val/logreward",
             self.val_logreward,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
+        self.log(
+            "val/accuracy",
+            self.val_accuracy,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
@@ -423,16 +460,17 @@ class Cond_TBGFN_Variable(LightningModule):
                     "|".join(self.trainer.datamodule.data_train.vocab.keys()),
                 ]
             )
-        self.logger.experiment.log(
-            {
-                "val/text_samples": wandb.Table(
-                    columns=[
-                        "input_sample",
-                        "generated_sample",
-                        "logreward",
-                        "library",
-                    ],
-                    data=rows,
-                )
-            }
-        )
+        if batch_idx % (x.shape[0] // 2) == 0:
+            self.logger.experiment.log(
+                {
+                    "val/text_samples": wandb.Table(
+                        columns=[
+                            "input_sample",
+                            "generated_sample",
+                            "logreward",
+                            "library",
+                        ],
+                        data=rows,
+                    )
+                }
+            )
