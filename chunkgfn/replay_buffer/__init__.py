@@ -3,6 +3,8 @@ from abc import ABC, abstractmethod
 import torch
 from torch import Tensor
 
+from chunkgfn.gfn.utils import pad_dim
+
 
 def get_ix_unique(x: torch.Tensor):
     """Get indices of unique elements in a tensor.
@@ -33,19 +35,6 @@ class ReplayBuffer(ABC):
 
     def __len__(self):
         return len(self.storage["input"])
-
-    def pad_dim(self, tensor: torch.Tensor, new_dim: int):
-        """Fix the dimension of a tensor by padding with zeros.
-        Args:
-            tensor (torch.Tensor[..., old_dim]): Tensor to be padded.
-            new_dim (int): New dimension.
-        Returns:
-            torch.Tensor: Padded tensor.
-        """
-        assert new_dim >= tensor.size(-1), "New dimension must be larger than old one!"
-        new_tensor = torch.zeros(*tensor.size()[:-1], new_dim).to(tensor)
-        new_tensor[..., : tensor.size(-1)] = tensor
-        return new_tensor
 
     def add(
         self,
@@ -78,7 +67,7 @@ class ReplayBuffer(ABC):
         logreward = logreward.cpu()
         # Pad all state/action related tensors to the same dimension
         for key in ["trajectories", "actions", "final_state"]:
-            self.storage[key] = self.pad_dim(self.storage[key], actions.shape[-1])
+            self.storage[key] = pad_dim(self.storage[key], actions.shape[-1])
 
         # Concatenate all tensors
         if len(self) == 0:

@@ -5,9 +5,9 @@ from . import ReplayBuffer
 
 class PrioritizedReplay(ReplayBuffer):
     def keep_capacity(self):
-        dist = torch.distributions.Categorical(logits=self.storage["logreward"])
+        probs = torch.softmax(self.storage["logreward"], dim=-1)
         if len(self) > self.capacity:
-            ixs = dist.sample((self.capacity,))
+            ixs = torch.multinomial(probs, self.capacity, replacement=False)
             for key in self.storage.keys():
                 self.storage[key] = self.storage[key][ixs]
 
