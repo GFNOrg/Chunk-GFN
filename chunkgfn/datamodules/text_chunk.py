@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import torch
 from lightning import LightningDataModule
@@ -8,58 +8,18 @@ from tokenizers.pre_tokenizers import Whitespace
 from tokenizers.trainers import BpeTrainer
 from torch.utils.data import DataLoader
 
-from chunkgfn.datasets.text_chunk import ChunkDataset
+from chunkgfn.datasets.text_chunk import ChunkDataset, generate_sentence
 
 
 class ChunkModule(LightningDataModule):
-    """`LightningDataModule` for the MNIST dataset.
-
-    The MNIST database of handwritten digits has a training set of 60,000 examples, and a test set of 10,000 examples.
-    It is a subset of a larger set available from NIST. The digits have been size-normalized and centered in a
-    fixed-size image. The original black and white images from NIST were size normalized to fit in a 20x20 pixel box
-    while preserving their aspect ratio. The resulting images contain grey levels as a result of the anti-aliasing
-    technique used by the normalization algorithm. the images were centered in a 28x28 image by computing the center of
-    mass of the pixels, and translating the image so as to position this point at the center of the 28x28 field.
-
-    A `LightningDataModule` implements 7 key methods:
-
-    ```python
-        def prepare_data(self):
-        # Things to do on 1 GPU/TPU (not on every GPU/TPU in DDP).
-        # Download data, pre-process, split, save to disk, etc...
-
-        def setup(self, stage):
-        # Things to do on every process in DDP.
-        # Load data, set variables, etc...
-
-        def train_dataloader(self):
-        # return train dataloader
-
-        def val_dataloader(self):
-        # return validation dataloader
-
-        def test_dataloader(self):
-        # return test dataloader
-
-        def predict_dataloader(self):
-        # return predict dataloader
-
-        def teardown(self, stage):
-        # Called on every process in DDP.
-        # Clean up after fit or test.
-    ```
-
-    This allows you to share a full dataset without explaining how to download,
-    split, transform and process the data.
-
-    Read the docs:
-        https://lightning.ai/docs/pytorch/latest/data/datamodule.html
-    """
+    """A `LightningDataModule` for the chunk dataset."""
 
     def __init__(
         self,
-        dataset: Dict[str, Any],
         batch_size: int = 64,
+        max_len: int = 30,
+        num_sentences: int = 1000,
+        val_ratio: float = 0.2,
         num_workers: int = 0,
         pin_memory: bool = False,
     ) -> None:
@@ -94,8 +54,15 @@ class ChunkModule(LightningDataModule):
 
         # load and split datasets only if not loaded already
         if not self.data_train and not self.data_val and not self.data_test:
-            self.data_train = ChunkDataset(**self.hparams.dataset)
-            self.data_val = ChunkDataset(**self.hparams.dataset)
+            # Generate data
+            data = [
+                generate_sentence(self.hparams.max_len)
+                for _ in range(self.hparams.num_sentences)
+            ]
+            # Split data
+            n_val = int(self.hparams.val_ratio * len(data))
+            self.data_train = ChunkDataset(data[:-n_val])
+            self.data_val = ChunkDataset(data[-n_val:])
 
     def train_dataloader(self) -> DataLoader[Any]:
         """Create and return the train dataloader.
@@ -120,8 +87,36 @@ class ChunkModule(LightningDataModule):
             batch_size=self.hparams.batch_size,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
-            shuffle=True,
+            shuffle=False,
         )
+
+    def get_invalid_actions_mask(self, states: torch.Tensor):
+        """Get the invalid actions mask for a batch of states.
+        Args:
+            states (torch.Tensor[batch_size, max_len, state_vocab_dim]): Batch of states.
+        Returns:
+            actions_mask (torch.Tensor[batch_size, state_vocab_dim]): Invalid actions mask.
+        """
+        # Convert token indices to strings
+        state_strings = self.batch_token2vocab(states, inlcude_eos=False)
+        len_tokens_to_go = self.hparams.max_len - torch.tensor(
+            [len(s) for s in state_strings]
+        )
+
+        actions_mask = len_tokens_to_go.unsqueeze(
+            1
+        ) >= self.data_train.action_len.unsqueeze(0)
+        actions_mask = actions_mask.to(states.device)
+        return actions_mask
+
+    def get_tokens_with_max_len(self, max_len: int):
+        """Get tokens that exceed the maximum length."""
+        indices = [
+            idx
+            for idx, action in self.token2vocab.items()
+            if (len(action) > max_len) and action != "<EOS>"
+        ]
+        return indices
 
     def batch_token2vocab(self, states: torch.Tensor, inlcude_eos: bool = False):
         """Convert batch of token indices to list of strings.
@@ -189,6 +184,26 @@ class ChunkModule(LightningDataModule):
         logrewards = torch.tensor(logrewards)
 
         return logrewards
+
+    def compute_accuracy(self, inputs: torch.Tensor, states: torch.Tensor):
+        """Compute the accuracy for a batch of sentences.
+        Args:
+            inputs (torch.Tensor[batch_size, max_len, input_vocab_dim]): Batch of inputs.
+            states (torch.Tensor[batch_size, max_len, state_vocab_dim]): Batch of states.
+        """
+        # Convert token indices to strings
+        state_strings = self.batch_token2vocab(states, inlcude_eos=False)
+        input_strings = self.batch_token2vocab(inputs, inlcude_eos=False)
+        # Compute reward
+        accuracies = []
+        for inp, state in zip(input_strings, state_strings):
+            if inp == state:
+                accuracies.append(1.0)
+            else:
+                accuracies.append(0.0)
+        accuracies = torch.tensor(accuracies)
+
+        return accuracies
 
     def chunk(self, final_states: torch.Tensor):
         """Find the most valuable token from the corpus.

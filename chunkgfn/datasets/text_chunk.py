@@ -59,15 +59,15 @@ def generate_sentence(max_len):
 
 
 class ChunkDataset(Dataset):
-    def __init__(self, max_len=30, num_sentences=1000):
+    def __init__(self, data):
         self._vocab = {"<EOS>": 0, "A": 1, "B": 2, "C": 3}
         self.vocab2token = {k: i for i, k in enumerate(self.vocab)}
         self.token2vocab = {i: k for i, k in enumerate(self.vocab)}
-        self.num_sentences = num_sentences
-        self.data = [generate_sentence(max_len) for _ in range(num_sentences)]
+        self.data = data
+        self.action_len = torch.Tensor([0, 1, 1, 1])
 
     def __len__(self):
-        return self.num_sentences
+        return len(self.data)
 
     @property
     def vocab(self):
@@ -85,6 +85,9 @@ class ChunkDataset(Dataset):
         if token not in self.vocab:
             self.token2vocab[len(self._vocab)] = token
             self._vocab[token] = len(self._vocab)
+            self.action_len = torch.cat(
+                [self.action_len, torch.Tensor([len(token)])], dim=0
+            )
 
     def __getitem__(self, i):
         vec = torch.tensor(
