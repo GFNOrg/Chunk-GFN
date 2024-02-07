@@ -201,7 +201,7 @@ class ChunkModule(LightningDataModule):
                 accuracies.append(1.0)
             else:
                 accuracies.append(0.0)
-        accuracies = torch.tensor(accuracies)
+        accuracies = torch.tensor(accuracies).to(states.device)
 
         return accuracies
 
