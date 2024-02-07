@@ -11,16 +11,18 @@ forward_model:
   _target_: chunkgfn.models.rnn.RNN
   num_layers: 1
   hidden_dim: 128
-  input_vocab_size: 3
-  state_vocab_size: 3
+  input_vocab_size: 4
+  state_vocab_size: 4
   act:
     _target_: torch.nn.ReLU
+  
+backward_model: null
 
 partition_model:
   _target_: chunkgfn.models.rnn.logZ
   num_layers: 1
   hidden_dim: 128
-  input_vocab_size: 3
+  input_vocab_size: 4
   act:
     _target_: torch.nn.ReLU
 
@@ -34,10 +36,13 @@ epsilon_scheduler:
   max_epochs: ${trainer.max_epochs}
 
 replay_buffer:
-  _target_: chunkgfn.replay_buffer.random_replay.RandomReplay
-  capacity: 10000
+  _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
+  capacity: 5000
+  cutoff_distance: 5
 
 lr: 3e-4
-partition_lr: 3e-4
+partition_lr: 5e-4
 monitor: train/loss
-n_samples: 1000 # Number of samples for the tokenizer
+ratio_from_replay_buffer: 0.55 # Ratio of samples from replay buffer
+n_trajectories: 30 # Number of trajectories to sample per input
+reward_temperature: 1.0 # Temperature for the reward
