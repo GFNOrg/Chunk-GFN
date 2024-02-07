@@ -2,10 +2,8 @@ from abc import ABC, abstractmethod
 from typing import Any, Tuple
 
 import torch
-import wandb
 from einops import rearrange, repeat
 from lightning import LightningModule
-from torch import nn
 from torch.distributions import Categorical
 from torchmetrics import MeanMetric
 
@@ -47,23 +45,14 @@ class SequenceGFN(ABC, LightningModule):
         self.replay_buffer = replay_buffer
 
         # Metric managers
-        self.metric_manager = {
-            "train": {
-                "loss": MeanMetric(),
-                "logreward": MeanMetric(),
-                "logZ": MeanMetric(),
-            },
-            "val": {
-                "loss": MeanMetric(),
-                "logreward": MeanMetric(),
-                "logZ": MeanMetric(),
-            },
-            "test": {
-                "loss": MeanMetric(),
-                "logreward": MeanMetric(),
-                "logZ": MeanMetric(),
-            },
-        }
+        self.train_loss = MeanMetric()
+        self.val_loss = MeanMetric()
+        self.train_logreward = MeanMetric()
+        self.val_logreward = MeanMetric()
+        self.train_logZ = MeanMetric()
+        self.val_logZ = MeanMetric()
+        self.train_accuracy = MeanMetric()
+        self.val_accuracy = MeanMetric()
 
     def configure_optimizers(self):
         params = []
@@ -85,20 +74,6 @@ class SequenceGFN(ABC, LightningModule):
             }
         return {"optimizer": optimizer}
 
-    def update_state(
-        self, state: torch.tensor, action: torch.Tensor, done: torch.Tensor
-    ) -> torch.Tensor:
-        """Update the given state with the given action.
-        We look for the first occurence of the padding element and replace it with the action.
-        Args:
-            state (torch.Tensor[batch_size, seq_length, state_dim]): State tensor.
-            action (torch.Tensor[batch_size, n_actions]): Action tensor.
-            done (torch.Tensor[batch_size]): Whether the trajectory is done or not.
-        Return:
-            new_state (torch.Tensor[batch_size, seq_length, state_dim]): Updated state tensor.
-        """
-        new_state = state.clone()
-
     def forward(
         self,
         x: torch.Tensor,
@@ -114,12 +89,13 @@ class SequenceGFN(ABC, LightningModule):
             temperature (float|None): Temperature value for tempering.
         Return:
             trajectories (torch.Tensor[batch_size, trajectory_length, seq_length, state_dim]): Trajectories for each sample in the batch.
-            actions (torch.Tensor[batch_size, trajectory_length, state_dim]): Actions for each sample in the batch.
+            actions (torch.Tensor[batch_size, trajectory_length]): Actions for each sample in the batch.
             dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
             state (torch.Tensor[batch_size, seq_length, state_dim]): Final state.
         """
         bs, max_len, dim = x.shape
         eos_token_idx = self.trainer.datamodule.data_train.eos_token_idx
+        vocab_tensor = self.trainer.datamodule.data_train.vocab_tensor.to(x.device)
         state = -torch.ones(bs, max_len, dim).to(x)
         eos_token = torch.zeros(dim).to(x)
         eos_token[eos_token_idx] = 1
@@ -159,30 +135,47 @@ class SequenceGFN(ABC, LightningModule):
 
             act = cat.sample()
 
-            action = torch.zeros((bs, dim)).to(state)
-            action.scatter_(-1, act.unsqueeze(-1), 1)
-
             # Update the state by filling the current timestep with the sampled action only if it doesn't contain EOS token
             new_state = state.clone()
-            if t > 0:
-                done |= torch.all(state[:, t - 1] == eos_token.unsqueeze(0), dim=1)
-                new_state[:, t] = torch.where(done.unsqueeze(1), state[:, t], action)
+            start_indices = torch.argmax(((state == -1).all(dim=-1) + 0), dim=-1).to(
+                x.device
+            )  # Where to start inserting action
+            idx = tuple(
+                [
+                    torch.arange(len(state)).unsqueeze(1).to(state.device),
+                    start_indices.unsqueeze(1)
+                    + torch.arange(vocab_tensor.shape[1]).to(state.device),
+                ]
+            )
+            if t == 0:
+                new_state[idx] = vocab_tensor[act]
             else:
-                new_state[:, t] = action
+                done |= torch.where(
+                    (state == eos_token).all(dim=-1).any(dim=-1), True, done
+                )
+                new_state[idx] = torch.where(
+                    done[(...,) + (None,) * 2],
+                    new_state[idx],
+                    vocab_tensor[
+                        act
+                    ],  # Don't update the state if it contains EOS token
+                )
 
-            actions.append(action)
+            actions.append(act)
             trajectories.append(state)
             dones.append(done.clone())
 
             state = new_state.clone()
 
         trajectories.append(state)
+        dones.append(torch.ones((bs)).to(x).bool())
         trajectories = torch.stack(trajectories, dim=1)
         actions = torch.stack(actions, dim=1)
         dones = torch.stack(dones, dim=1)
 
         return trajectories, actions, dones, state
 
+    @abstractmethod
     def compute_loss(self, x, trajectories, actions, dones, logreward):
         """Compute the loss for the model.
         Args:
@@ -191,40 +184,12 @@ class SequenceGFN(ABC, LightningModule):
             actions (torch.Tensor[batch_size, trajectory_length, state_dim]): Actions for each sample in the batch.
             dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
             logreward (torch.Tensor[batch_size]): Log reward.
-        Return:
-            loss (torch.Tensor[1]): Loss.
-            logZ (torch.Tensor[1]): Log partition function.
         """
-        log_pf = 0
-        log_pb = 0
-        for t in range(trajectories.shape[1]):
-            state = trajectories[:, t]
-            logp_f_s = self.forward_model(x, state)
-
-            act = torch.argmax(actions[:, t], dim=-1)
-            log_pf += (Categorical(logits=logp_f_s).log_prob(act)) * (~dones[:, t] + 0)
-            if t > 0:
-                backward_actions = self.trainer.datamodule.get_parent_actions(state)
-                logp_b_s = torch.where(
-                    backward_actions == 1, torch.tensor(0.0), -torch.inf
-                ).to(logp_f_s)
-                act = torch.argmax(actions[:, t - 1], dim=-1)
-                log_pb += torch.where(
-                    dones[:, t],
-                    torch.tensor(0.0),
-                    Categorical(logits=logp_b_s).log_prob(act),
-                )
-
-        logZ = self.partition_model(x).squeeze(-1)
-        loss = self.mse_loss(logZ + log_pf, logreward + log_pb)
-
-        return loss, logZ
+        NotImplementedError
 
     def sample(
         self,
         batch: torch.Tensor,
-        eos_token_idx: int,
-        state_vocab_size: int,
         train: bool = True,
         epsilon: float = 0.0,
         temperature: float = 0.0,
@@ -233,12 +198,9 @@ class SequenceGFN(ABC, LightningModule):
         # Repeat the input n_trajectories times
         x = repeat(x, "b ... -> b n ...", n=self.hparams.n_trajectories)
         x = rearrange(x, "b n ... -> (b n) ...")
-        trajectories, actions, dones, final_state = self(
-            x, eos_token_idx, state_vocab_size, train, epsilon, temperature
-        )
-        logreward = (
-            self.trainer.datamodule.compute_logreward(x, final_state).to(final_state)
-            / self.hparams.reward_temperature
+        trajectories, actions, dones, final_state = self(x, train, epsilon, temperature)
+        logreward = self.trainer.datamodule.compute_logreward(x, final_state).to(
+            final_state
         )
         return x, trajectories, actions, dones, final_state, logreward
 
@@ -319,6 +281,7 @@ class SequenceGFN(ABC, LightningModule):
             on_epoch=True,
             prog_bar=True,
         )
+
         if self.epsilon_scheduler is not None:
             self.log("epsilon", epsilon, on_step=False, on_epoch=True, prog_bar=False)
         if self.temperature_scheduler is not None:
@@ -340,18 +303,7 @@ class SequenceGFN(ABC, LightningModule):
             on_epoch=True,
             prog_bar=True,
         )
-        if (
-            self.current_epoch > 0
-            and self.current_epoch % self.hparams.library_update_frequency == 0
-            and batch_idx == 0
-        ):
-            self.update_library()
 
-        else:
-            opt = self.optimizers()
-            opt.zero_grad()
-            self.manual_backward(loss)
-            opt.step()
         return loss
 
     def validation_step(self, val_batch, batch_idx) -> Any:
