@@ -62,17 +62,19 @@ def generate_sentence(max_len):
 class ChunkDataset(Dataset):
     def __init__(self, data):
         self._vocab = {"<EOS>": [0], "A": [1], "B": [2], "C": [3]}
+        self._vocab2token = {k: i for i, k in enumerate(self.vocab)}
         self.vocab2token = {k: i for i, k in enumerate(self.vocab)}
         self.token2vocab = {i: k for i, k in enumerate(self.vocab)}
         self.data = data
-        self.action_len = torch.Tensor([0, 1, 1, 1])
+        self.action_len = torch.Tensor([1, 1, 1, 1])
+        self.padding_token = -torch.ones(len(self._vocab2token))
 
     def __len__(self):
         return len(self.data)
 
     @property
     def vocab_tensor(self):
-        dim = len(self.vocab2token)
+        dim = len(self._vocab2token)
         max_len = max([len(self._vocab[key]) for key in self._vocab])
         _vocab_tensor = -torch.ones(len(self._vocab), max_len, dim)
         for key in self._vocab:
@@ -97,6 +99,7 @@ class ChunkDataset(Dataset):
     def add_to_vocab(self, token):
         if token not in self.vocab:
             self.token2vocab[len(self._vocab)] = token
+            self.vocab2token[token] = len(self._vocab)
             self._vocab[token] = list(
                 chain.from_iterable([self._vocab[atom] for atom in token])
             )
@@ -106,8 +109,8 @@ class ChunkDataset(Dataset):
 
     def __getitem__(self, i):
         vec = torch.tensor(
-            [self.vocab2token[k] for k in self.data[i]] + [self.vocab2token["<EOS>"]]
+            [self._vocab2token[k] for k in self.data[i]] + [self._vocab2token["<EOS>"]]
         )
-        out = torch.zeros((len(vec), len(self.vocab2token)))
+        out = torch.zeros((len(vec), len(self._vocab2token)))
         out[range(len(vec)), vec] = 1
         return out

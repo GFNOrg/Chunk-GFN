@@ -23,13 +23,14 @@ class ChunkModule(LightningDataModule):
         num_workers: int = 0,
         pin_memory: bool = False,
     ) -> None:
-        """Initialize a `MNISTDataModule`.
-
-        :param data_dir: The data directory. Defaults to `"data/"`.
-        :param train_val_test_split: The train, validation and test split. Defaults to `(55_000, 5_000, 10_000)`.
-        :param batch_size: The batch size. Defaults to `64`.
-        :param num_workers: The number of workers. Defaults to `0`.
-        :param pin_memory: Whether to pin memory. Defaults to `False`.
+        """Initialize the `ChunkModule`.
+        Args:
+            batch_size (int): The batch size. Defaults to 64.
+            max_len (int): The maximum length of the sentences. Defaults to 30.
+            num_sentences (int): The number of sentences to generate. Defaults to 1000.
+            val_ratio (float): The ratio of the validation set. Defaults to 0.2.
+            num_workers (int): The number of workers for the dataloaders. Defaults to 0.
+            pin_memory (bool): Whether to pin memory for the dataloaders. Defaults to False.
         """
         super().__init__()
 
@@ -64,6 +65,17 @@ class ChunkModule(LightningDataModule):
             self.data_train = ChunkDataset(data[:-n_val])
             self.data_val = ChunkDataset(data[-n_val:])
 
+            self.s0 = -torch.ones(1 + self.hparams.max_len, 4)
+
+    def is_initial_state(self, state: torch.Tensor) -> bool:
+        """Check if the state is the initial state.
+        Args:
+            state (torch.Tensor[batch_size, max_len, dim]): Batch of states.
+        Returns:
+            is_initial (bool): Whether the state is the initial state or not.
+        """
+        return (state == self.s0.to(state)).all(dim=-1).all(dim=-1)
+
     def train_dataloader(self) -> DataLoader[Any]:
         """Create and return the train dataloader.
 
@@ -90,12 +102,75 @@ class ChunkModule(LightningDataModule):
             shuffle=False,
         )
 
+    def forward_step(self, state: torch.Tensor, forward_action: torch.Tensor):
+        """Change the state after you apply the forward action.
+        Args:
+            state (torch.Tensor[batch_size, max_len, dim]): Batch of states.
+            forward_action (torch.Tensor[batch_size]): Batch of forward actions. Each element corresponds to the index of the action.
+        Returns:
+            new_state (torch.Tensor[batch_size, max_len, dim]): Batch of new states.
+            done (torch.Tensor[batch_size]): Whether the trajectory is done or not.
+        """
+        bs, max_len, dim = state.shape
+        eos_token = torch.zeros(dim).to(state)
+        vocab_tensor = self.data_train.vocab_tensor.to(state.device)
+        action_len = self.data_train.action_len.to(state.device)
+        eos_token[self.data_train.eos_token_idx] = 1
+        # Update the state by filling the current timestep with the sampled action only if it doesn't contain EOS token
+        new_state = state.clone()
+        start_indices = torch.argmax(((state == -1).all(dim=-1) + 0), dim=-1).to(
+            state.device
+        )  # Where to start inserting action
+
+        done = torch.where((state == eos_token).all(dim=-1).any(dim=-1), True, False)
+
+        for i in range(bs):
+            if not done[i]:
+                new_state[
+                    i,
+                    start_indices[i] : start_indices[i]
+                    + int(action_len[forward_action[i]]),
+                ] = vocab_tensor[
+                    forward_action[i],
+                    : int(action_len[forward_action[i]]),
+                ]
+        return new_state, done
+
+    def backward_step(self, state: torch.Tensor, backward_action: torch.Tensor):
+        """Change the state after you apply the backward action.
+        Args:
+            state (torch.Tensor[batch_size, max_len, dim]): Batch of states.
+            backward_action (torch.Tensor[batch_size]): Batch of backward actions. Each element corresponds to the index of the action.
+        Returns:
+            new_state (torch.Tensor[batch_size, max_len, dim]): Batch of new states.
+        """
+        bs, max_len, dim = state.shape
+        new_state = state.clone()
+        action_len = self.data_train.action_len.to(state.device)
+
+        where_padding = (state == self.data_train.padding_token.to(state)).all(dim=-1)
+
+        start_indices = torch.where(
+            where_padding.any(dim=-1), torch.argmax(where_padding + 0, dim=-1), max_len
+        )
+        done = start_indices == 0
+        mask = torch.arange(max_len).unsqueeze(0).to(state.device) >= (
+            start_indices - action_len[backward_action]
+        ).unsqueeze(1)
+        mask &= torch.arange(max_len).unsqueeze(0).to(state.device) < (
+            start_indices
+        ).unsqueeze(1)
+        mask &= (~done).unsqueeze(-1)
+        new_state[mask] = self.data_train.padding_token.to(state.device)
+
+        return new_state, done
+
     def get_invalid_actions_mask(self, states: torch.Tensor):
         """Get the invalid actions mask for a batch of states.
         Args:
-            states (torch.Tensor[batch_size, max_len, state_vocab_dim]): Batch of states.
+            states (torch.Tensor[batch_size, max_len, dim]): Batch of states.
         Returns:
-            actions_mask (torch.Tensor[batch_size, state_vocab_dim]): Invalid actions mask.
+            actions_mask (torch.Tensor[batch_size, n_actions]): Invalid actions mask.
         """
         # Convert token indices to strings
         state_strings = self.batch_token2vocab(states, inlcude_eos=False)
@@ -106,17 +181,9 @@ class ChunkModule(LightningDataModule):
         actions_mask = len_tokens_to_go.unsqueeze(
             1
         ) >= self.data_train.action_len.unsqueeze(0)
+        actions_mask[..., self.data_train.eos_token_idx] = 1
         actions_mask = actions_mask.to(states.device)
         return actions_mask
-
-    def get_tokens_with_max_len(self, max_len: int):
-        """Get tokens that exceed the maximum length."""
-        indices = [
-            idx
-            for idx, action in self.token2vocab.items()
-            if (len(action) > max_len) and action != "<EOS>"
-        ]
-        return indices
 
     def batch_token2vocab(self, states: torch.Tensor, inlcude_eos: bool = False):
         """Convert batch of token indices to list of strings.
@@ -233,19 +300,25 @@ class ChunkModule(LightningDataModule):
         state_strings = self.batch_token2vocablist(states)
         # Get the parent actions
         parent_actions = torch.zeros(
-            states.shape[0], states.shape[-1], dtype=torch.int64
+            states.shape[0], len(self.data_train._vocab), dtype=torch.int64
         )
         for i, state in enumerate(state_strings):
-            last_token = state[-1]
-            if last_token == "<EOS>":
-                parent_actions_ = ["<EOS>"]
+            if len(state) > 0:
+                last_token = state[-1]
+                if last_token == "<EOS>":
+                    parent_actions_ = ["<EOS>"]
+                else:
+                    parent_actions_ = set()
+                    for j in range(len(state)):
+                        parent_actions_.add("".join(state[-j - 1 :]))
+                    parent_actions_ = list(
+                        parent_actions_.intersection(set(self.data_train.vocab))
+                    )
+                parent_actions_ = [
+                    self.data_train.vocab2token[a] for a in parent_actions_
+                ]
+                parent_actions[i, parent_actions_] = 1
             else:
-                parent_actions_ = set()
-                for j in range(len(state)):
-                    parent_actions_.add("".join(state[-j - 1 :]))
-                parent_actions_ = list(
-                    parent_actions_.intersection(set(self.data_train.vocab))
-                )
-            parent_actions_ = [self.data_train.vocab[a] for a in parent_actions_]
-            parent_actions[i, parent_actions_] = 1
+                parent_actions[i] = 1
+        return parent_actions
         return parent_actions
