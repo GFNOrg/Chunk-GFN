@@ -2,15 +2,16 @@ from torch import nn
 
 
 class RNN(nn.Module):
-    def __init__(self, num_layers, hidden_dim, input_vocab_size, state_vocab_size, act):
+    def __init__(self, num_layers, hidden_dim, input_dim, state_dim, act, n_actions):
         super(RNN, self).__init__()
         self.num_layers = num_layers
         self.hidden_dim = hidden_dim
-        self.state_vocab_size = state_vocab_size
-        self.input_vocab_size = input_vocab_size
+        self.state_dim = state_dim
+        self.input_dim = input_dim
+        self.n_actions = n_actions
 
-        self.input_embedding = nn.Linear(input_vocab_size, hidden_dim)
-        self.state_embedding = nn.Linear(state_vocab_size, hidden_dim)
+        self.input_embedding = nn.Linear(input_dim, hidden_dim)
+        self.state_embedding = nn.Linear(state_dim, hidden_dim)
 
         self.rnn_encoder = nn.GRU(
             hidden_dim, hidden_dim, num_layers=2, batch_first=True
@@ -23,7 +24,7 @@ class RNN(nn.Module):
             self.layers.append(nn.Linear(hidden_dim, hidden_dim))
             self.layers.append(act)
         self.layers.append(nn.LayerNorm(hidden_dim))
-        self.logits_layer = nn.Linear(hidden_dim, state_vocab_size)
+        self.logits_layer = nn.Linear(hidden_dim, n_actions)
 
     def forward(self, x, state):
         """

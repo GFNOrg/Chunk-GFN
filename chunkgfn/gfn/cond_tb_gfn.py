@@ -33,7 +33,7 @@ class Cond_TBGFN(SequenceGFN):
                     backward_actions == 1, torch.tensor(0.0), -torch.inf
                 ).to(logp_f_s)
                 log_pb += torch.where(
-                    dones[:, t],
+                    dones[:, t] | self.trainer.datamodule.is_initial_state(state),
                     torch.tensor(0.0),
                     Categorical(logits=logp_b_s).log_prob(actions[:, t - 1]),
                 )

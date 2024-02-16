@@ -11,8 +11,9 @@ forward_model:
   _target_: chunkgfn.models.rnn.RNN
   num_layers: 1
   hidden_dim: 128
-  input_vocab_size: 4
-  state_vocab_size: 4
+  input_dim: 4
+  state_dim: 4
+  n_actions: 4
   act:
     _target_: torch.nn.ReLU
   
@@ -26,9 +27,6 @@ partition_model:
   act:
     _target_: torch.nn.ReLU
 
-criterion:
-  _target_: chunkgfn.rewards.mse.MSE
-
 epsilon_scheduler:
   _target_: chunkgfn.schedulers.linear_schedule.LinearSchedule
   initial_value: 1
@@ -40,9 +38,10 @@ replay_buffer:
   capacity: 5000
   cutoff_distance: 5
 
-lr: 3e-4
-partition_lr: 5e-4
-monitor: train/loss
+forward_lr: 5e-4
+partition_lr: 1e-4
+monitor: val/logreward
 ratio_from_replay_buffer: 0.55 # Ratio of samples from replay buffer
-n_trajectories: 30 # Number of trajectories to sample per input
+ratio_backward: 0.5 # Ratio of samples from backward model
+n_trajectories: 20 # Number of trajectories to sample per input
 reward_temperature: 1.0 # Temperature for the reward

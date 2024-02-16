@@ -56,9 +56,33 @@ class SequenceGFN(ABC, LightningModule):
 
     def configure_optimizers(self):
         params = []
-        for model in [self.forward_model, self.backward_model, self.partition_model]:
-            if model is not None and has_trainable_parameters(model):
-                params.append({"params": model.parameters(), "lr": self.hparams.lr})
+        if self.forward_model is not None and has_trainable_parameters(
+            self.forward_model
+        ):
+            params.append(
+                {
+                    "params": self.forward_model.parameters(),
+                    "lr": self.hparams.forward_lr,
+                }
+            )
+        if self.backward_model is not None and has_trainable_parameters(
+            self.backward_model
+        ):
+            params.append(
+                {
+                    "params": self.backward_model.parameters(),
+                    "lr": self.hparams.backward_lr,
+                }
+            )
+        if self.partition_model is not None and has_trainable_parameters(
+            self.partition_model
+        ):
+            params.append(
+                {
+                    "params": self.partition_model.parameters(),
+                    "lr": self.hparams.partition_lr,
+                }
+            )
 
         optimizer = self.hparams.optimizer(params=params)
         if self.hparams.scheduler is not None:
@@ -73,6 +97,59 @@ class SequenceGFN(ABC, LightningModule):
                 },
             }
         return {"optimizer": optimizer}
+
+    def go_backward(
+        self,
+        x: torch.Tensor,
+        final_state: torch.Tensor,
+    ):
+        """Sample backward trajectories conditioned on inputs.
+        Args:
+            x (torch.Tensor[batch_size, seq_length, input_dim]): Conditioning vector.
+            final_state (torch.Tensor[batch_size, seq_length, input_dim]): Final state.
+        Return:
+            trajectories (torch.Tensor[batch_size, trajectory_length, seq_length, state_dim]): Trajectories for each sample in the batch.
+            actions (torch.Tensor[batch_size, trajectory_length]): Actions for each sample in the batch.
+            dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
+            state (torch.Tensor[batch_size, seq_length, state_dim]): Final state.
+        """
+        bs, max_len, dim = x.shape
+        eos_token_idx = self.trainer.datamodule.data_train.eos_token_idx
+        state = final_state.clone()
+        eos_token = torch.zeros(dim).to(x)
+        eos_token[eos_token_idx] = 1
+        done = torch.ones((bs)).to(x).bool()
+
+        # Start unrolling the trajectories
+        actions = []
+        trajectories = []
+        dones = []
+        dones.append(torch.ones((bs)).to(x).bool())
+
+        for t in range(max_len):
+            backward_actions = self.trainer.datamodule.get_parent_actions(state)
+            logp_b_s = torch.where(
+                backward_actions == 1, torch.tensor(0.0), -torch.inf
+            ).to(state)
+            cat = Categorical(logits=logp_b_s)
+
+            act = cat.sample()
+
+            new_state, done = self.trainer.datamodule.backward_step(state, act)
+
+            actions.append(act)
+            trajectories.append(state)
+            dones.append(done.clone())
+
+            state = new_state.clone()
+
+        trajectories.append(state)
+
+        trajectories = torch.stack(trajectories[::-1], dim=1)
+        actions = torch.stack(actions[::-1], dim=1)
+        dones = torch.stack(dones[::-1], dim=1)
+
+        return trajectories, actions, dones, final_state
 
     def forward(
         self,
@@ -94,12 +171,8 @@ class SequenceGFN(ABC, LightningModule):
             state (torch.Tensor[batch_size, seq_length, state_dim]): Final state.
         """
         bs, max_len, dim = x.shape
-        eos_token_idx = self.trainer.datamodule.data_train.eos_token_idx
-        vocab_tensor = self.trainer.datamodule.data_train.vocab_tensor.to(x.device)
+
         state = -torch.ones(bs, max_len, dim).to(x)
-        eos_token = torch.zeros(dim).to(x)
-        eos_token[eos_token_idx] = 1
-        done = torch.zeros((bs)).to(x).bool()
 
         # Start unrolling the trajectories
         actions = []
@@ -135,31 +208,7 @@ class SequenceGFN(ABC, LightningModule):
 
             act = cat.sample()
 
-            # Update the state by filling the current timestep with the sampled action only if it doesn't contain EOS token
-            new_state = state.clone()
-            start_indices = torch.argmax(((state == -1).all(dim=-1) + 0), dim=-1).to(
-                x.device
-            )  # Where to start inserting action
-            idx = tuple(
-                [
-                    torch.arange(len(state)).unsqueeze(1).to(state.device),
-                    start_indices.unsqueeze(1)
-                    + torch.arange(vocab_tensor.shape[1]).to(state.device),
-                ]
-            )
-            if t == 0:
-                new_state[idx] = vocab_tensor[act]
-            else:
-                done |= torch.where(
-                    (state == eos_token).all(dim=-1).any(dim=-1), True, done
-                )
-                new_state[idx] = torch.where(
-                    done[(...,) + (None,) * 2],
-                    new_state[idx],
-                    vocab_tensor[
-                        act
-                    ],  # Don't update the state if it contains EOS token
-                )
+            new_state, done = self.trainer.datamodule.forward_step(state, act)
 
             actions.append(act)
             trajectories.append(state)
@@ -198,7 +247,41 @@ class SequenceGFN(ABC, LightningModule):
         # Repeat the input n_trajectories times
         x = repeat(x, "b ... -> b n ...", n=self.hparams.n_trajectories)
         x = rearrange(x, "b n ... -> (b n) ...")
-        trajectories, actions, dones, final_state = self(x, train, epsilon, temperature)
+
+        n_backwards = int(self.hparams.ratio_backward * x.shape[0])
+        if train and n_backwards > 0:
+            indices = torch.randperm(len(x))
+            (
+                trajectories_backward,
+                actions_backward,
+                dones_backward,
+                final_state_backward,
+            ) = self.go_backward(
+                x[indices[:n_backwards]],
+                x[indices[:n_backwards]],
+            )
+            (
+                trajectories_forward,
+                actions_forward,
+                dones_forward,
+                final_state_forward,
+            ) = self.forward(
+                x[indices[n_backwards:]],
+                train=train,
+                epsilon=epsilon,
+                temperature=temperature,
+            )
+            trajectories = torch.cat(
+                [trajectories_backward, trajectories_forward], dim=0
+            )
+            actions = torch.cat([actions_backward, actions_forward], dim=0)
+            dones = torch.cat([dones_backward, dones_forward], dim=0)
+            final_state = torch.cat([final_state_backward, final_state_forward], dim=0)
+        else:
+            trajectories, actions, dones, final_state = self.forward(
+                x, train=train, epsilon=epsilon, temperature=temperature
+            )
+
         logreward = self.trainer.datamodule.compute_logreward(x, final_state).to(
             final_state
         )
