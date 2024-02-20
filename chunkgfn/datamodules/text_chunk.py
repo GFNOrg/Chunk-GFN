@@ -280,7 +280,7 @@ class ChunkModule(LightningDataModule):
         # Convert token indices to strings
         state_strings = self.batch_token2vocab(final_states, inlcude_eos=False)
         # Apply BPE algorithm to the state_strings and get the most frequent token
-        tokenizer = Tokenizer(BPE(self.data_train.vocab, [], unk_token="[UNK]"))
+        tokenizer = Tokenizer(BPE(self.data_train.vocab2token, [], unk_token="[UNK]"))
         tokenizer.pre_tokenizer = Whitespace()
         trainer = BpeTrainer(vocab_size=self.data_train.vocab_size)
         tokenizer.train_from_iterator(state_strings, trainer=trainer)

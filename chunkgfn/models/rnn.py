@@ -25,6 +25,8 @@ class RNN(nn.Module):
             self.layers.append(act)
         self.layers.append(nn.LayerNorm(hidden_dim))
         self.logits_layer = nn.Linear(hidden_dim, n_actions)
+        self.logits_layer.weight.data.fill_(0.0)
+        self.logits_layer.bias.data.fill_(0.0)
 
     def forward(self, x, state):
         """
