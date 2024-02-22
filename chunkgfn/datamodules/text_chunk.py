@@ -124,6 +124,7 @@ class ChunkModule(LightningDataModule):
 
         done = torch.where((state == eos_token).all(dim=-1).any(dim=-1), True, False)
 
+        # TODO: Vectorize this loop (#4)
         for i in range(bs):
             if not done[i]:
                 new_state[
