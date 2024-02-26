@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 from einops import repeat
 
-from . import ReplayBuffer
+from .base_replay_buffer import ConditionalReplayBuffer
 
 
 def distance(src: torch.Tensor, dst: torch.Tensor):
@@ -20,7 +20,7 @@ def distance(src: torch.Tensor, dst: torch.Tensor):
     return F.mse_loss(src_, dst_, reduction="none").sum(-1)
 
 
-class PrioritizedReplay(ReplayBuffer):
+class PrioritizedReplay(ConditionalReplayBuffer):
     def __init__(self, cutoff_distance: float, capacity: int = 1000):
         super().__init__(capacity)
         self.cutoff_distance = cutoff_distance

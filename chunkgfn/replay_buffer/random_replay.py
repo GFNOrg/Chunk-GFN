@@ -1,9 +1,9 @@
 import torch
 
-from . import ReplayBuffer
+from .base_replay_buffer import ConditionalReplayBuffer
 
 
-class RandomReplay(ReplayBuffer):
+class RandomReplay(ConditionalReplayBuffer):
     def add(
         self,
         input: torch.Tensor,
