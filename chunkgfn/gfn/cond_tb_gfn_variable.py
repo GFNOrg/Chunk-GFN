@@ -7,13 +7,14 @@ from torch.distributions import Categorical
 from torch.optim import lr_scheduler as lr_scheduler
 from torch.optim.optimizer import Optimizer as Optimizer
 
-from chunkgfn.gfn import SequenceGFN
-from chunkgfn.models.utils import expand_linear_layer
+from chunkgfn.gfn.base_conditional_gfn import ConditionalSequenceGFN
+from chunkgfn.gfn.utils import pad_dim
+from chunkgfn.models.utils import expand_embedding_layer, expand_linear_layer
 from chunkgfn.replay_buffer import ReplayBuffer
 from chunkgfn.schedulers import Scheduler
 
 
-class Cond_TBGFN_Variable(SequenceGFN):
+class Cond_TBGFN_Variable(ConditionalSequenceGFN):
     def __init__(
         self,
         forward_model: nn.Module,
@@ -38,6 +39,61 @@ class Cond_TBGFN_Variable(SequenceGFN):
             **kwargs,
         )
         self.automatic_optimization = False
+
+    def go_backward(
+        self,
+        x: torch.Tensor,
+        final_state: torch.Tensor,
+    ):
+        """Sample backward trajectories conditioned on inputs.
+        Args:
+            x (torch.Tensor[batch_size, seq_length, input_dim]): Conditioning vector.
+            final_state (torch.Tensor[batch_size, seq_length, input_dim]): Final state.
+        Return:
+            trajectories (torch.Tensor[batch_size, trajectory_length, seq_length, state_dim]): Trajectories for each sample in the batch.
+            actions (torch.Tensor[batch_size, trajectory_length]): Actions for each sample in the batch.
+            dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
+            state (torch.Tensor[batch_size, seq_length, state_dim]): Final state.
+        """
+        bs, max_len, dim = x.shape
+        eos_token_idx = self.trainer.datamodule.data_train.eos_token_idx
+        state = final_state.clone()
+        eos_token = torch.zeros(dim).to(x)
+        eos_token[eos_token_idx] = 1
+        done = torch.ones((bs)).to(x).bool()
+
+        # Start unrolling the trajectories
+        actions = []
+        trajectories = []
+        dones = []
+        dones.append(torch.ones((bs)).to(x).bool())
+
+        for t in range(max_len):
+            backward_actions = self.trainer.datamodule.get_parent_actions(state)
+            logp_b_s = torch.where(
+                backward_actions == 1,
+                self.trainer.datamodule.data_train.action_len[backward_actions] - 1,
+                -torch.inf,
+            ).to(state)
+            cat = Categorical(logits=logp_b_s)
+
+            act = cat.sample()
+
+            new_state, done = self.trainer.datamodule.backward_step(state, act)
+
+            actions.append(act)
+            trajectories.append(state)
+            dones.append(done.clone())
+
+            state = new_state.clone()
+
+        trajectories.append(state)
+
+        trajectories = torch.stack(trajectories[::-1], dim=1)
+        actions = torch.stack(actions[::-1], dim=1)
+        dones = torch.stack(dones[::-1], dim=1)
+
+        return trajectories, actions, dones, final_state
 
     def compute_loss(self, x, trajectories, actions, dones, logreward):
         """Compute the loss for the model.
@@ -83,7 +139,7 @@ class Cond_TBGFN_Variable(SequenceGFN):
         1. Pick a number of generated samples from the replay buffer.
         2. Transform samples into their usual data structure.
         3. Apply a tokenizing algorithm to get the most valuable token.
-        4. Update the forward_model's input_layer and logits_layer to reflect the added token.
+        4. Update the logits_layer to reflect the added token.
         """
 
         # Pick a number of generated samples from the replay buffer
@@ -92,13 +148,34 @@ class Cond_TBGFN_Variable(SequenceGFN):
         self.trainer.datamodule.chunk(samples["final_state"])
 
         # Update model's weights
+        def init_weights(m):
+            m.bias.data.fill_(0.0)
+            m.weight.data.fill_(0.0)
+
+        self.forward_model.action_embeddings = expand_embedding_layer(
+            self.forward_model.action_embeddings,
+            new_in_dim=self.forward_model.action_embeddings.data.shape[0] + 1,
+            init_weights=None,
+        )
+        """
         self.forward_model.logits_layer = expand_linear_layer(
             self.forward_model.logits_layer,
             new_out_dim=self.forward_model.logits_layer.out_features + 1,
+            init_weights=init_weights,
         )
-
+        """
+        params_group = self.trainer.optimizers[0].state_dict()["param_groups"]
+        state = self.trainer.optimizers[0].state_dict()["state"]
+        state[0]["exp_avg"] = pad_dim(
+            state[0]["exp_avg"].T, self.forward_model.action_embeddings.data.shape[0]
+        ).T
+        state[0]["exp_avg_sq"] = pad_dim(
+            state[0]["exp_avg_sq"].T, self.forward_model.action_embeddings.data.shape[0]
+        ).T
         # Reinitialize the optimizer
         self.trainer.optimizers = [self.configure_optimizers()["optimizer"]]
+        self.trainer.optimizers[0].state_dict()["param_groups"] = params_group
+        self.trainer.optimizers[0].state_dict()["state"] = state
 
     def training_step(self, train_batch, batch_idx) -> Any:
         if self.epsilon_scheduler is not None:

@@ -2,10 +2,10 @@ import torch
 import torch.nn.functional as F
 from torch.distributions import Categorical
 
-from chunkgfn.gfn import SequenceGFN
+from chunkgfn.gfn.base_conditional_gfn import ConditionalSequenceGFN
 
 
-class Cond_TBGFN(SequenceGFN):
+class Cond_TBGFN(ConditionalSequenceGFN):
     def compute_loss(self, x, trajectories, actions, dones, logreward):
         """Compute the loss for the model.
         Args:
