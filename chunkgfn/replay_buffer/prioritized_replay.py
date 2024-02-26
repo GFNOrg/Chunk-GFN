@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 from einops import repeat
 
-from .base_replay_buffer import ConditionalReplayBuffer
+from .base_replay_buffer import ReplayBuffer
 
 
 def distance(src: torch.Tensor, dst: torch.Tensor):
@@ -20,7 +20,7 @@ def distance(src: torch.Tensor, dst: torch.Tensor):
     return F.mse_loss(src_, dst_, reduction="none").sum(-1)
 
 
-class PrioritizedReplay(ConditionalReplayBuffer):
+class PrioritizedReplay(ReplayBuffer):
     def __init__(self, cutoff_distance: float, capacity: int = 1000):
         super().__init__(capacity)
         self.cutoff_distance = cutoff_distance
@@ -101,10 +101,14 @@ class PrioritizedReplay(ConditionalReplayBuffer):
             for i in range(len(final_state)):
                 # This assumes that the replay buffer is ordered in ascending log-reward !
                 if logreward[i] > self.storage["logreward"][0]:
-                    src = torch.cat([input[i], final_state[i]], dim=-1)
-                    dst = torch.cat(
-                        [self.storage["input"], self.storage["final_state"]], dim=-1
-                    )
+                    if self.is_conditional:
+                        src = torch.cat([input[i], final_state[i]], dim=-1)
+                        dst = torch.cat(
+                            [self.storage["input"], self.storage["final_state"]], dim=-1
+                        )
+                    else:
+                        src = final_state[i].clone()
+                        dst = self.storage["final_state"].clone()
                     delta = distance(src, dst)
                     if min(delta) > self.cutoff_distance:
                         self.storage = {

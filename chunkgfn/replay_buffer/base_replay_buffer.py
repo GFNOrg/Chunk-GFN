@@ -3,9 +3,10 @@ from abc import ABC, abstractmethod
 import torch
 
 
-class ConditionalReplayBuffer(ABC):
-    def __init__(self, capacity: int = 1000):
+class ReplayBuffer(ABC):
+    def __init__(self, capacity: int = 1000, is_conditional: bool = True):
         self.capacity = capacity
+        self.is_conditional = is_conditional
         self.storage = {
             "input": torch.Tensor(),
             "trajectories": torch.Tensor(),
