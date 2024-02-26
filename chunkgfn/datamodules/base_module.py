@@ -68,12 +68,25 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         )
 
     def val_dataloader(self) -> DataLoader[Any]:
-        """Create and return the train dataloader.
+        """Create and return the val dataloader.
 
-        :return: The train dataloader.
+        :return: The val dataloader.
         """
         return DataLoader(
             dataset=self.data_val,
+            batch_size=self.hparams.batch_size,
+            num_workers=self.hparams.num_workers,
+            pin_memory=self.hparams.pin_memory,
+            shuffle=False,
+        )
+
+    def test_dataloader(self) -> DataLoader[Any]:
+        """Create and return the test dataloader.
+
+        :return: The test dataloader.
+        """
+        return DataLoader(
+            dataset=self.data_test,
             batch_size=self.hparams.batch_size,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
