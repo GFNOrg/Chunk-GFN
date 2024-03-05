@@ -21,8 +21,10 @@ def distance(src: torch.Tensor, dst: torch.Tensor):
 
 
 class PrioritizedReplay(ReplayBuffer):
-    def __init__(self, cutoff_distance: float, capacity: int = 1000):
-        super().__init__(capacity)
+    def __init__(
+        self, cutoff_distance: float, capacity: int = 1000, is_conditional: bool = True
+    ):
+        super().__init__(capacity, is_conditional)
         self.cutoff_distance = cutoff_distance
 
     def add(
