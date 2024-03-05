@@ -26,6 +26,7 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         threshold: float,
         oracle_difficulty: str = "medium",
         batch_size: int = 64,
+        sample_exact_length: bool = False,
         num_workers: int = 0,
         pin_memory: bool = False,
     ) -> None:
@@ -41,6 +42,7 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         self.oracle_difficulty = oracle_difficulty
         self.num_modes = num_modes
         self.threshold = threshold
+        self.sample_exact_length = sample_exact_length
 
         # Environment variables
         self.discovered_modes = set()  # Tracks the number of modes we discovered
@@ -271,9 +273,13 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
             states.device
         ).unsqueeze(0)  # Only use actions that can fit in the state
         eos_token_idx = self.atomic_tokens.index("<EOS>")
-        actions_mask[
-            ..., eos_token_idx
-        ] = 1  # We make sure that the EOS token is always available
+        if self.sample_exact_length:
+            # Don't allow the EOS token to be sampled if the state is not full
+            actions_mask[len_tokens_to_go != -1, eos_token_idx] = 0
+
+        actions_mask[len_tokens_to_go == 1, eos_token_idx] = (
+            1  # We make sure that the EOS token is always available at the last step
+        )
         actions_mask = actions_mask.to(states.device)
         return actions_mask
 
