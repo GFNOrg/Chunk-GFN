@@ -1,0 +1,12 @@
+_target_: chunkgfn.datamodules.bit_sequence.BitSequenceModule
+  
+max_len: 32
+num_modes: 60
+num_train_iterations: 100
+num_val_iterations: 20
+num_test_iterations: 20
+oracle_difficulty: medium
+threshold: 0.9
+batch_size: 64
+num_workers: 3
+pin_memory: False
