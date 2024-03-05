@@ -48,7 +48,7 @@ def generate_sentence(max_len):
         end_chunk = random.choice(end_chunks)
         sentence = start_chunk + middle_chunk + end_chunk
         if len(sentence) != max_len:
-            # If the sentence length is not 30, modify the middle_chunk by adding 3-letter tokens
+            # If the sentence length is not max_len, modify the middle_chunk by adding 3-letter tokens
             required_length = max_len - len(sentence)
             if required_length <= 0:
                 continue  # Skip this iteration if the middle_chunk is too long

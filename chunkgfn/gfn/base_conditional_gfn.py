@@ -8,7 +8,7 @@ from torch.distributions import Categorical
 from torchmetrics import MeanMetric
 
 from chunkgfn.gfn.utils import has_trainable_parameters
-from chunkgfn.replay_buffer import ReplayBuffer
+from chunkgfn.replay_buffer.base_replay_buffer import ReplayBuffer
 from chunkgfn.schedulers import Scheduler
 
 NEG_INF = -1e6  # Negative infinity
