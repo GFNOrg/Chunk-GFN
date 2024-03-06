@@ -7,6 +7,7 @@ from tokenizers import Tokenizer
 from tokenizers.models import BPE
 from tokenizers.pre_tokenizers import Whitespace
 from tokenizers.trainers import BpeTrainer
+from torch.utils.data import Dataset
 
 from .base_module import BaseUnconditionalEnvironmentModule
 
@@ -52,7 +53,9 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
             "0",
             "1",
         ]  # Atomic tokens for representing the states. Stays fixed during training.
-        self.s0 = -torch.ones(self.max_len, len(self.atomic_tokens))  # Initial state
+        self.s0 = -torch.ones(
+            1 + self.max_len, len(self.atomic_tokens)
+        )  # Initial state
         self.padding_token = -torch.ones(len(self.atomic_tokens))
         self.eos_token = torch.tensor([1, 0, 0])
         self.actions = [
@@ -65,7 +68,6 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         ).long()  # Length of each action. Can change during training.
 
         self.create_modes()
-        self.build_test()
 
     @property
     def one_hot_action_tensor(self):
@@ -338,8 +340,12 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         return parent_actions
 
     def build_test(self):
-        self.test_seq = []
-        self.test_rs = []
+        """Build the test points around the modes.
+        returns:
+            test_seq (list[str]): List of test sequences.
+            test_rs (list[float]): List of test logrewards.
+        """
+        test_seq = []
         vocab = ["0", "1"]
 
         def noise_seq(x, n):
@@ -356,5 +362,39 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         for m in self.modes:
             for n in range(1, len(m) + 1):
                 s = noise_seq(m, n)
-                self.test_seq.append(s)
-                self.test_rs.extend(self.compute_logreward_from_strings([s]))
+                s_idx = torch.tensor(
+                    [self.atomic_tokens.index(char) for char in s]
+                    + [self.atomic_tokens.index("<EOS>")]
+                )
+                s_tensor = torch.zeros(s_idx.shape[0], len(self.atomic_tokens))
+                s_tensor[torch.arange(s_idx.shape[0]), s_idx] = 1
+                test_seq.append(s_tensor)
+        test_seq = torch.stack(test_seq, dim=0)
+        test_rs = self.compute_logreward(test_seq)
+        return test_seq, test_rs
+
+    def setup_val_test_datasets(self):
+        val_seq, val_rs = self.build_test()
+        test_seq, test_rs = self.build_test()
+
+        class BitSequenceDataset(Dataset):
+            def __init__(self, sequences, logrewards):
+                self.sequences = sequences
+                self.logrewards = logrewards
+
+            def __len__(self):
+                return len(self.sequences)
+
+            def __getitem__(self, index):
+                """Get the sequence and logreward at the given index.
+                Args:
+                    index (int): The index.
+                Returns:
+                    seq (torch.Tensor[max_len, dim]): The sequence.
+                    logr (torch.Tensor): The logreward.
+                """
+                seq, logr = self.sequences[index], self.logrewards[index]
+                return seq, logr
+
+        self.data_val = BitSequenceDataset(val_seq, val_rs)
+        self.data_test = BitSequenceDataset(test_seq, test_rs)

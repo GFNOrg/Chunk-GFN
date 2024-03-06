@@ -197,5 +197,9 @@ class BaseUnconditionalEnvironmentModule(BaseEnvironmentModule):
         self.data_train = DummyDataset(
             self.num_train_iterations * self.hparams.batch_size
         )
-        self.data_val = DummyDataset(self.num_test_iterations * self.hparams.batch_size)
-        self.data_test = DummyDataset(self.num_val_iterations * self.hparams.batch_size)
+        self.setup_val_test_datasets()
+
+    @abstractmethod
+    def setup_val_test_datasets(self):
+        """Instantiate datasets for the val and test dataloaders to use."""
+        NotImplementedError

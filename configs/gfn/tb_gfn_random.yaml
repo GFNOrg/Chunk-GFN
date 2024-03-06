@@ -33,5 +33,5 @@ forward_lr: 1e-4
 partition_lr: 1e-3
 monitor: val/logreward
 ratio_from_replay_buffer: 0.55 # Ratio of samples from replay buffer
-n_trajectories: 1 # Number of trajectories to sample per input
+n_trajectories: 1 # Number of test trajectories to sample
 reward_temperature: 1.0 # Temperature for the reward

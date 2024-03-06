@@ -6,7 +6,7 @@ from einops import rearrange, repeat
 from lightning import LightningModule
 from torch import nn
 from torch.distributions import Categorical
-from torchmetrics import MeanMetric
+from torchmetrics import MeanMetric, SpearmanCorrCoef
 
 from chunkgfn.gfn.utils import has_trainable_parameters
 from chunkgfn.replay_buffer.base_replay_buffer import ReplayBuffer
@@ -50,7 +50,9 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         self.train_logreward = MeanMetric()
         self.val_logreward = MeanMetric()
         self.train_logZ = MeanMetric()
-        self.val_logZ = MeanMetric()
+        self.val_correlation = (
+            SpearmanCorrCoef()
+        )  # Correlation between likelihood and logreward
 
     def configure_optimizers(self):
         params = []
@@ -256,9 +258,6 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         temperature: float = 0.0,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = batch
-        # Repeat the input n_trajectories times
-        x = repeat(x, "b ... -> b n ...", n=self.hparams.n_trajectories)
-        x = rearrange(x, "b n ... -> (b n) ...")
 
         trajectories, actions, dones, final_state = self.forward(
             x.shape[0], train=train, epsilon=epsilon, temperature=temperature
@@ -373,18 +372,22 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         return loss
 
     def validation_step(self, val_batch, batch_idx) -> Any:
-        x, trajectories, actions, dones, final_state, logreward = self.sample(
-            val_batch,
-            train=False,
-            epsilon=None,
-            temperature=None,
+        final_state, logreward = val_batch
+        # Repeat the final_state n_trajectories times
+        final_state = repeat(
+            final_state, "b ... -> b n ...", n=self.hparams.n_trajectories
         )
+        logreward = repeat(logreward, "b ... -> b n ...", n=self.hparams.n_trajectories)
+        final_state = rearrange(final_state, "b n ... -> (b n) ...")
+        logreward = rearrange(logreward, "b n ... -> (b n) ...")
 
-        loss, logZ = self.compute_loss(trajectories, actions, dones, logreward)
+        trajectories, actions, dones, final_state = self.go_backward(final_state)
+        likelihood = self.get_ll(trajectories, actions, dones)
+        loss, _ = self.compute_loss(trajectories, actions, dones, logreward)
 
         self.val_loss(loss)
         self.val_logreward(logreward.mean())
-        self.val_logZ(logZ.mean())
+        self.val_correlation(likelihood, logreward)
 
         self.log("val/loss", self.val_loss, on_step=True, prog_bar=True)
         self.log(
@@ -394,10 +397,9 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             on_epoch=True,
             prog_bar=True,
         )
-
         self.log(
-            "val/logZ",
-            self.val_logZ,
+            "val/correlation",
+            self.val_correlation,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
