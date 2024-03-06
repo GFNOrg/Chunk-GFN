@@ -2,6 +2,7 @@ from typing import Any
 
 import torch
 import torch.nn.functional as F
+import wandb
 from torch import nn
 from torch.distributions import Categorical
 from torch.optim import lr_scheduler as lr_scheduler
@@ -202,6 +203,7 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
                 on_epoch=True,
                 prog_bar=True,
             )
+
         if (
             self.current_epoch > 0
             and self.current_epoch % self.hparams.library_update_frequency == 0
@@ -215,3 +217,21 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
             self.manual_backward(loss)
             opt.step()
         return loss
+
+    def on_train_epoch_end(self) -> None:
+        rows = []
+        rows.append(
+            [
+                "|".join(self.trainer.datamodule.actions),
+            ]
+        )
+        self.logger.experiment.log(
+            {
+                "text_samples": wandb.Table(
+                    columns=[
+                        "library",
+                    ],
+                    data=rows,
+                )
+            }
+        )

@@ -277,9 +277,9 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         eos_token_idx = self.atomic_tokens.index("<EOS>")
         if self.sample_exact_length:
             # Don't allow the EOS token to be sampled if the state is not full
-            actions_mask[len_tokens_to_go != -1, eos_token_idx] = 0
+            actions_mask[len_tokens_to_go > 1, eos_token_idx] = 0
 
-        actions_mask[len_tokens_to_go == 1, eos_token_idx] = (
+        actions_mask[len_tokens_to_go <= 1, eos_token_idx] = (
             1  # We make sure that the EOS token is always available at the last step
         )
         actions_mask = actions_mask.to(states.device)
