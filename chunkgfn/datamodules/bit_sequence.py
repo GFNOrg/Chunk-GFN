@@ -310,6 +310,25 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
                 [self.action_len, torch.tensor([len(token)])], dim=0
             )
 
+    def state_dict(self):
+        state = {
+            "discovered_modes": self.discovered_modes,
+            "visited": self.visited,
+            "actions": self.actions,
+            "action_len": self.action_len,
+            "modes": self.modes,
+            "len_modes": self.len_modes,
+        }
+        return state
+
+    def load_state_dict(self, state_dict):
+        self.discovered_modes = state_dict["discovered_modes"]
+        self.visited = state_dict["visited"]
+        self.actions = state_dict["actions"]
+        self.action_len = state_dict["action_len"]
+        self.modes = state_dict["modes"]
+        self.len_modes = state_dict["len_modes"]
+
     def get_parent_actions(self, states: torch.Tensor):
         """Get the parent actions of a batch of states.
         Args:
