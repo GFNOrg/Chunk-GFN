@@ -377,15 +377,21 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         final_state = repeat(
             final_state, "b ... -> b n ...", n=self.hparams.n_trajectories
         )
+        logreward = repeat(logreward, "b ... -> b n ...", n=self.hparams.n_trajectories)
         final_state = rearrange(final_state, "b n ... -> (b n) ...")
+        logreward = rearrange(logreward, "b n ... -> (b n) ...")
 
         trajectories, actions, dones, final_state = self.go_backward(final_state)
+
+        loss, _ = self.compute_loss(trajectories, actions, dones, logreward)
         likelihood = self.get_ll(trajectories, actions, dones)
         # Computes the likelihood by computing expectation over PB trajectories
         likelihood = rearrange(
             likelihood, "(b n) ... -> b n ...", b=final_state.shape[0]
         ).mean(dim=1)
-        loss, _ = self.compute_loss(trajectories, actions, dones, logreward)
+        logreward = rearrange(
+            logreward, "(b n) ... -> b n ...", b=final_state.shape[0]
+        ).mean(dim=1)
 
         self.val_loss(loss)
         self.val_logreward(logreward.mean())
