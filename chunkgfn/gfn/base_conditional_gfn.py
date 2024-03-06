@@ -424,3 +424,17 @@ class ConditionalSequenceGFN(ABC, LightningModule):
             on_epoch=True,
             prog_bar=True,
         )
+
+    def on_save_checkpoint(self, checkpoint):
+        """Add the replay buffer to the checkpoint.
+        Args:
+            checkpoint (dict): Checkpoint dictionary.
+        """
+        checkpoint["replay_buffer"] = self.replay_buffer
+
+    def on_load_checkpoint(self, checkpoint):
+        """Load the replay buffer from the checkpoint.
+        Args:
+            checkpoint (dict): Checkpoint dictionary.
+        """
+        self.replay_buffer = checkpoint["replay_buffer"]
