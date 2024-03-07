@@ -210,24 +210,35 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         """
         bs, max_len, dim = state.shape
         eos_token = self.eos_token.to(state)
+        padding_token = self.padding_token.to(state)
         one_hot_action_tensor = self.one_hot_action_tensor.to(state.device)
-
+        max_action_len = one_hot_action_tensor.shape[1]
         # Update the state by filling the current timestep with the sampled action only if it doesn't contain EOS token
-        new_state = state.clone()
+        new_state = torch.cat(
+            [
+                state.clone(),
+                padding_token.unsqueeze(0).unsqueeze(1).repeat(bs, max_action_len, 1),
+            ],
+            dim=1,
+        )
         start_indices = torch.argmax(
-            ((state == self.padding_token.to(state.device)).all(dim=-1) + 0), dim=-1
+            ((state == padding_token).all(dim=-1) + 0), dim=-1
         )  # Where to start inserting action
+        index = start_indices.unsqueeze(1) + torch.arange(max_action_len).unsqueeze(
+            0
+        ).to(state.device)
         done = torch.where((state == eos_token).all(dim=-1).any(dim=-1), True, False)
-        for i in range(bs):
-            if not done[i]:
-                new_state[
-                    i,
-                    start_indices[i] : start_indices[i]
-                    + int(self.action_len[forward_action[i]]),
-                ] = one_hot_action_tensor[
-                    forward_action[i],
-                    : int(self.action_len[forward_action[i]]),
-                ]
+        new_state = torch.where(
+            done.unsqueeze(1).unsqueeze(2),
+            new_state,
+            torch.scatter(
+                new_state,
+                1,
+                index.unsqueeze(2).repeat(1, 1, dim),
+                one_hot_action_tensor[forward_action],
+            ),
+        )
+        new_state = new_state[:, :max_len, :]
 
         return new_state, done
 
@@ -318,6 +329,8 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
             "action_len": self.action_len,
             "modes": self.modes,
             "len_modes": self.len_modes,
+            "data_val": self.data_val,
+            "data_test": self.data_test,
         }
         return state
 
@@ -328,6 +341,8 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         self.action_len = state_dict["action_len"]
         self.modes = state_dict["modes"]
         self.len_modes = state_dict["len_modes"]
+        self.data_val = state_dict["data_val"]
+        self.data_test = state_dict["data_test"]
 
     def get_parent_actions(self, states: torch.Tensor):
         """Get the parent actions of a batch of states.
