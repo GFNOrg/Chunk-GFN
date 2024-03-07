@@ -2,7 +2,6 @@ from typing import Any
 
 import torch
 import torch.nn.functional as F
-import wandb
 from torch import nn
 from torch.distributions import Categorical
 from torch.optim import lr_scheduler as lr_scheduler
@@ -105,104 +104,7 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
         self.trainer.optimizers = [self.configure_optimizers()["optimizer"]]
 
     def training_step(self, train_batch, batch_idx) -> Any:
-        if self.epsilon_scheduler is not None:
-            epsilon = self.epsilon_scheduler.step(self.current_epoch)
-        else:
-            epsilon = None
-        if self.temperature_scheduler is not None:
-            temperature = self.temperature_scheduler.step(self.current_epoch)
-        else:
-            temperature = None
-
-        x, trajectories, actions, dones, final_state, logreward = self.sample(
-            train_batch,
-            train=True,
-            epsilon=epsilon,
-            temperature=temperature,
-        )
-        batch_size = x.shape[0]
-        nsamples_replay = int(batch_size * self.hparams.ratio_from_replay_buffer)
-
-        if self.replay_buffer is not None:
-            with torch.no_grad():
-                self.replay_buffer.add(
-                    input=x,
-                    trajectories=trajectories,
-                    actions=actions,
-                    dones=dones,
-                    final_state=final_state,
-                    logreward=logreward,
-                )
-                samples = self.replay_buffer.sample(nsamples_replay)
-
-            for key in samples.keys():
-                samples[key] = samples[key].to(x.device)
-
-            # Concatenate samples from the replay buffer and the on-policy samples
-            indices = torch.randperm(len(x))[: batch_size - nsamples_replay]
-            x = torch.cat([x[indices], samples["input"]], dim=0)
-            trajectories = torch.cat(
-                [trajectories[indices], samples["trajectories"]], dim=0
-            )
-            actions = torch.cat([actions[indices], samples["actions"]], dim=0)
-            dones = torch.cat([dones[indices], samples["dones"]], dim=0)
-            final_state = torch.cat(
-                [final_state[indices], samples["final_state"]], dim=0
-            )
-            logreward = torch.cat([logreward[indices], samples["logreward"]], dim=0)
-
-        loss, logZ = self.compute_loss(trajectories, actions, dones, logreward)
-        additional_metrics = self.trainer.datamodule.compute_metrics(final_state)
-
-        self.train_loss(loss)
-        self.train_logreward(logreward.mean())
-        self.train_logZ(logZ.mean())
-
-        self.log("train/loss", self.train_loss, on_step=True, prog_bar=True)
-        self.log(
-            "train/logreward",
-            self.train_logreward,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
-        self.log(
-            "train/logZ",
-            self.train_logZ,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
-
-        if self.epsilon_scheduler is not None:
-            self.log("epsilon", epsilon, on_step=False, on_epoch=True, prog_bar=False)
-        if self.temperature_scheduler is not None:
-            self.log(
-                "temperature", epsilon, on_step=False, on_epoch=True, prog_bar=False
-            )
-
-        self.log(
-            "replay_buffer_size",
-            len(self.replay_buffer),
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
-        self.log(
-            "replay_buffer_mean_logreward",
-            self.replay_buffer.storage["logreward"].mean(),
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
-        for metric_name in additional_metrics:
-            self.log(
-                f"train/{metric_name}",
-                additional_metrics[metric_name],
-                on_step=False,
-                on_epoch=True,
-                prog_bar=True,
-            )
+        loss = super().training_step(train_batch, batch_idx)
 
         if (
             self.current_epoch > 0
@@ -217,21 +119,3 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
             self.manual_backward(loss)
             opt.step()
         return loss
-
-    def on_train_epoch_end(self) -> None:
-        rows = []
-        rows.append(
-            [
-                "|".join(self.trainer.datamodule.actions),
-            ]
-        )
-        self.logger.experiment.log(
-            {
-                "text_samples": wandb.Table(
-                    columns=[
-                        "library",
-                    ],
-                    data=rows,
-                )
-            }
-        )

@@ -182,7 +182,7 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         """
         strings = [
             s.replace("<EOS>", "") for s in self.to_raw(states)
-        ]  # remove <EOS> tokens and keep
+        ]  # remove <EOS> tokens
         self.visited.update(set(strings))
         dists = torch.tensor([[levenshtein(s, i) for i in self.modes] for s in strings])
         values, indices = torch.min(dists, dim=-1)
