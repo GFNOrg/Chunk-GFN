@@ -375,28 +375,47 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         Args:
             states (torch.Tensor[batch_size, max_len, state_vocab_dim]): Batch of states.
         """
-        # Convert token indices to strings
-        state_strings = self.to_raw(states)
-        # Get the parent actions
-        parent_actions = torch.zeros(
-            states.shape[0], len(self.actions), dtype=torch.int64
+        bs, max_len, dim = states.shape
+        padding_token = self.padding_token.to(states.device)
+        one_hot_action_tensor = self.one_hot_action_tensor.to(states.device)
+        final_state = torch.cat(
+            [
+                states,
+                padding_token.unsqueeze(0)
+                .unsqueeze(1)
+                .repeat(bs, 1 + self.action_len.max().item(), 1),
+            ],
+            dim=1,
         )
-        max_action_len = self.action_len.long().max().item()
-        for i, state in enumerate(state_strings):
-            if len(state) > 0:
-                if "<EOS>" in state:
-                    parent_actions_ = ["<EOS>"]
-                else:
-                    parent_actions_ = set()
-                    for j in range(max_action_len):
-                        parent_actions_.add("".join(state[-j - 1 :]))
-                    parent_actions_ = list(
-                        parent_actions_.intersection(set(self.actions))
-                    )
-                parent_actions_ = [self.actions.index(a) for a in parent_actions_]
-                parent_actions[i, parent_actions_] = 1
-            else:
-                parent_actions[i] = 1
+        n_actions = one_hot_action_tensor.shape[0]
+        one_hot_action_tensor = torch.cat(
+            [
+                one_hot_action_tensor,
+                padding_token.unsqueeze(0).unsqueeze(1).repeat(n_actions, 1, 1),
+            ],
+            dim=1,
+        )
+        simplified = torch.argmax(final_state, dim=-1)
+        simplified = torch.where(
+            (final_state == padding_token).all(dim=-1),
+            torch.tensor(len(self.atomic_tokens)),
+            simplified,
+        )  # dummy value to map padding_token to
+        simplified_one_hot_action_tensor = torch.argmax(one_hot_action_tensor, dim=-1)
+        simplified_one_hot_action_tensor = torch.where(
+            (one_hot_action_tensor == padding_token).all(dim=-1),
+            torch.tensor(len(self.atomic_tokens)),
+            simplified_one_hot_action_tensor,
+        )
+        unfolded = simplified.unfold(
+            1, 1 + self.action_len.max().item(), 1
+        )  # This generates a sliding windows view of the tensor that we can compare against.
+        parent_actions = (
+            (unfolded.unsqueeze(-2) == simplified_one_hot_action_tensor)
+            .all(dim=-1)
+            .any(dim=1)
+            .long()
+        )
         return parent_actions
 
     def build_test(self):
