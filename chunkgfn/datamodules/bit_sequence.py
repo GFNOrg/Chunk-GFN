@@ -12,6 +12,26 @@ from torch.utils.data import Dataset
 from .base_module import BaseUnconditionalEnvironmentModule
 
 
+class BitSequenceDataset(Dataset):
+    def __init__(self, sequences, logrewards):
+        self.sequences = sequences
+        self.logrewards = logrewards
+
+    def __len__(self):
+        return len(self.sequences)
+
+    def __getitem__(self, index):
+        """Get the sequence and logreward at the given index.
+        Args:
+            index (int): The index.
+        Returns:
+            seq (torch.Tensor[max_len, dim]): The sequence.
+            logr (torch.Tensor): The logreward.
+        """
+        seq, logr = self.sequences[index], self.logrewards[index]
+        return seq, logr
+
+
 class BitSequenceModule(BaseUnconditionalEnvironmentModule):
     """A `BitSequenceModule` for defining the bit-sequence task in (Malkin, et. al. 2022).
     Based on: https://gist.github.com/MJ10/59bfcc8bce4b5fce9c1c38a81b1105ae
@@ -329,8 +349,10 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
             "action_len": self.action_len,
             "modes": self.modes,
             "len_modes": self.len_modes,
-            "data_val": self.data_val,
-            "data_test": self.data_test,
+            "data_val_sequences": self.data_val.sequences,
+            "data_val_logrewards": self.data_val.logrewards,
+            "data_test_sequences": self.data_test.sequences,
+            "data_test_logrewards": self.data_test.logrewards,
         }
         return state
 
@@ -341,8 +363,12 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         self.action_len = state_dict["action_len"]
         self.modes = state_dict["modes"]
         self.len_modes = state_dict["len_modes"]
-        self.data_val = state_dict["data_val"]
-        self.data_test = state_dict["data_test"]
+        self.data_val = BitSequenceDataset(
+            state_dict["data_val_sequences"], state_dict["data_val_logrewards"]
+        )
+        self.data_test = BitSequenceDataset(
+            state_dict["data_test_sequences"], state_dict["data_test_logrewards"]
+        )
 
     def get_parent_actions(self, states: torch.Tensor):
         """Get the parent actions of a batch of states.
@@ -410,25 +436,6 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
     def setup_val_test_datasets(self):
         val_seq, val_rs = self.build_test()
         test_seq, test_rs = self.build_test()
-
-        class BitSequenceDataset(Dataset):
-            def __init__(self, sequences, logrewards):
-                self.sequences = sequences
-                self.logrewards = logrewards
-
-            def __len__(self):
-                return len(self.sequences)
-
-            def __getitem__(self, index):
-                """Get the sequence and logreward at the given index.
-                Args:
-                    index (int): The index.
-                Returns:
-                    seq (torch.Tensor[max_len, dim]): The sequence.
-                    logr (torch.Tensor): The logreward.
-                """
-                seq, logr = self.sequences[index], self.logrewards[index]
-                return seq, logr
 
         self.data_val = BitSequenceDataset(val_seq, val_rs)
         self.data_test = BitSequenceDataset(test_seq, test_rs)
