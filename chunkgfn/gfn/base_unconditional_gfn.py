@@ -180,12 +180,12 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             p_f_s = torch.where(
                 valid_actions_mask,
                 p_f_s,
-                torch.tensor(NEG_INF).to(p_f_s.device),
+                torch.tensor(NEG_INF).to(p_f_s),
             )
             uniform_dist_probs = torch.where(
                 valid_actions_mask,
                 uniform_dist_probs,
-                torch.tensor(0.).to(uniform_dist_probs.device),
+                torch.tensor(0.).to(uniform_dist_probs),
             )
 
             if train:
