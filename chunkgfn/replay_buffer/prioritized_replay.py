@@ -55,6 +55,7 @@ class PrioritizedReplay(ReplayBuffer):
         final_state = final_state.cpu()
         logreward = logreward.cpu()
 
+        # This is the first batch.
         if len(self) == 0:
             self.storage = {
                 "input": input,
@@ -69,7 +70,7 @@ class PrioritizedReplay(ReplayBuffer):
             for key in self.storage.keys():
                 self.storage[key] = self.storage[key][ix]
 
-        # We're a batch and the buffer isn't full yet.
+        # Adding a batch and the buffer isn't full yet.
         elif len(self) < self.capacity:
             self.storage["input"] = torch.cat([self.storage["input"], input], dim=0)
             self.storage["trajectories"] = torch.cat(
@@ -165,9 +166,9 @@ class PrioritizedReplay(ReplayBuffer):
             idx_sorted = torch.argsort(self.storage["logreward"], descending=False)
             _apply_idx(idx_sorted, self.storage)
 
-            # Keep largest values.
             for k, v in self.storage.items():
-                self.storage[k] = self.storage[k][-self.capacity :]
+                self.storage[k] = self.storage[k][-self.capacity :]  # Keep largest.
+
 
     def sample(self, num_samples: int):
         """Sample from the replay buffer according to the logreward and without replacement.
