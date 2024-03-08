@@ -50,6 +50,7 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         sample_exact_length: bool = False,
         num_workers: int = 0,
         pin_memory: bool = False,
+        **kwargs,
     ) -> None:
         super().__init__(
             num_train_iterations,
@@ -58,6 +59,7 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
             batch_size,
             num_workers,
             pin_memory,
+            **kwargs,
         )
         self.max_len = max_len
         self.oracle_difficulty = oracle_difficulty

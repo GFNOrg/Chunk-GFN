@@ -1,4 +1,7 @@
+from random import randint
 from typing import Any, Dict, List, Optional, Tuple
+import datetime
+import os
 
 import hydra
 import lightning as L
@@ -130,4 +133,14 @@ def main(cfg: DictConfig) -> Optional[float]:
 
 
 if __name__ == "__main__":
+
+    if "SLURM_JOB_ID" not in os.environ:
+        # Random 8 digit faux job id.
+        job_id = ''.join(["{}".format(randint(0, 9)) for num in range(0, 8)])
+        os.environ["SLURM_JOB_ID"] = "chunkgfn_test_{}".format(job_id)
+
+    if "SLURM_JOB_NAME" not in os.environ:
+        timestamp = datetime.datetime.now().strftime("%d%m%y-%H:%M:%S")
+        os.environ["SLURM_JOB_NAME"] = "chunkgfn_test_{}".format(timestamp)
+
     main()
