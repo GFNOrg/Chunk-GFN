@@ -34,7 +34,7 @@ class TBGFN(UnConditionalSequenceGFN):
                 ).to(logp_f_s)
                 log_pb += torch.where(
                     dones[:, t] | self.trainer.datamodule.is_initial_state(state),
-                    torch.tensor(0.0),
+                    torch.tensor(0.0).to(logp_b_s.device),
                     Categorical(logits=logp_b_s).log_prob(actions[:, t - 1]),
                 )
 
