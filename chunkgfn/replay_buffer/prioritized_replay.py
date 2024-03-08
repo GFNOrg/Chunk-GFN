@@ -120,7 +120,7 @@ class PrioritizedReplay(ReplayBuffer):
             buffer_dim = self.storage["final_state"].shape[0]
             if curr_dim > 0:
 
-                # Distances should incorperate conditioning vector.
+                # Distances should incorporate conditioning vector.
                 if self.is_conditional:
                     batch = torch.cat(
                         [dict_curr_batch["input"], dict_curr_batch["final_state"]],
