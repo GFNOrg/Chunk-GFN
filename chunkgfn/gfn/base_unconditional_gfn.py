@@ -124,6 +124,12 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             logp_b_s = torch.where(
                 backward_actions == 1, torch.tensor(0.0), -torch.inf
             ).to(state)
+            # When no action is available, just fill with uniform because it won't be picked anyway in the backward_step. Doing this avoids having nan when computing probabilities
+            logp_b_s = torch.where(
+                (logp_b_s == -torch.inf).all(dim=-1).unsqueeze(1),
+                torch.tensor(0.0),
+                logp_b_s,
+            )
             cat = Categorical(logits=logp_b_s)
 
             act = cat.sample()
@@ -230,17 +236,32 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
 
     @torch.no_grad()
     def get_ll(
-        self, trajectories: torch.Tensor, actions: torch.Tensor, dones: torch.Tensor
+        self, final_state: torch.Tensor, logreward: torch.Tensor
     ) -> torch.Tensor:
         """Get the log likelihood of the model for the given trajectories.
         Args:
-            trajectories (torch.Tensor[batch_size, trajectory_length, seq_length, state_dim]): Trajectories for each sample in the batch.
-            actions (torch.Tensor[batch_size, trajectory_length]): Actions for each sample in the batch.
-            dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
+            final_state (torch.Tensor[batch_size, seq_length, state_dim]): The examples for which we're computing the log-likelihood.
+            logreward (torch.Tensor[batch_size]): Log reward.
         Return:
-            log_pf (torch.Tensor[batch_size]): Log likelihood.
+            log_pT (torch.Tensor[batch_size]): Log likelihood.
+            trajectories (torch.Tensor[batch_size*n_trajectories, trajectory_length, seq_length, state_dim]): Trajectories for each sample in the batch.
+            actions (torch.Tensor[batch_size*n_trajectories, trajectory_length, state_dim]): Actions for each sample in the batch.
+            dones (torch.Tensor[batch_size*n_trajectories, trajectory_length]): Whether the trajectory is done or not.
+            logreward (torch.Tensor[batch_size*n_trajectories]): Log reward.
         """
+        # Repeat the final_state n_trajectories times
+        bs, max_len, dim = final_state.shape
+        final_state = repeat(
+            final_state, "b ... -> b n ...", n=self.hparams.n_trajectories
+        )
+        final_state = rearrange(final_state, "b n ... -> (b n) ...")
+        logreward = repeat(logreward, "b -> b n", n=self.hparams.n_trajectories)
+        logreward = rearrange(logreward, "b n ... -> (b n) ... ")
+        trajectories, actions, dones, final_state = self.go_backward(final_state)
+
+        # Calculate the log likelihood
         log_pf = 0
+        log_pb = 0
         for t in range(trajectories.shape[1]):
             state = trajectories[:, t]
             logp_f_s = self.forward_model(state)
@@ -248,7 +269,29 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
                 log_pf += (Categorical(logits=logp_f_s).log_prob(actions[:, t])) * (
                     ~dones[:, t] + 0
                 )
-        return log_pf
+            if t > 0:
+                backward_actions = self.trainer.datamodule.get_parent_actions(state)
+                logp_b_s = torch.where(
+                    backward_actions == 1, torch.tensor(0.0), -torch.inf
+                ).to(logp_f_s)
+                # When no action is available, just fill with uniform because it won't be picked anyway in the backward_step. Doing this avoids having nan when computing probabilities
+                logp_b_s = torch.where(
+                    (logp_b_s == -torch.inf).all(dim=-1).unsqueeze(1),
+                    torch.tensor(0.0),
+                    logp_b_s,
+                )
+                log_pb += torch.where(
+                    dones[:, t] | self.trainer.datamodule.is_initial_state(state),
+                    torch.tensor(0.0),
+                    Categorical(logits=logp_b_s).log_prob(actions[:, t - 1]),
+                )
+        log_pf = rearrange(log_pf, "(b n) ... -> b n ...", b=bs)
+        log_pb = rearrange(log_pb, "(b n) ... -> b n ...", b=bs)
+        log_pT = torch.logsumexp(log_pf - log_pb, dim=1) - torch.log(
+            torch.tensor(self.hparams.n_trajectories)
+        )
+
+        return log_pT, trajectories, actions, dones, logreward
 
     def sample(
         self,
@@ -373,29 +416,18 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
 
     def validation_step(self, val_batch, batch_idx) -> Any:
         final_state, logreward = val_batch
-        # Repeat the final_state n_trajectories times
-        final_state = repeat(
-            final_state, "b ... -> b n ...", n=self.hparams.n_trajectories
+        log_pT, trajectories, actions, dones, logreward = self.get_ll(
+            final_state, logreward
         )
-        logreward = repeat(logreward, "b ... -> b n ...", n=self.hparams.n_trajectories)
-        final_state = rearrange(final_state, "b n ... -> (b n) ...")
-        logreward = rearrange(logreward, "b n ... -> (b n) ...")
-
-        trajectories, actions, dones, final_state = self.go_backward(final_state)
-
         loss, _ = self.compute_loss(trajectories, actions, dones, logreward)
-        likelihood = self.get_ll(trajectories, actions, dones)
-        # Computes the likelihood by computing expectation over PB trajectories
-        likelihood = rearrange(
-            likelihood, "(b n) ... -> b n ...", b=final_state.shape[0]
-        ).mean(dim=1)
+
         logreward = rearrange(
             logreward, "(b n) ... -> b n ...", b=final_state.shape[0]
         ).mean(dim=1)
 
         self.val_loss(loss)
         self.val_logreward(logreward.mean())
-        self.val_correlation(likelihood, logreward)
+        self.val_correlation(log_pT, logreward)
 
         self.log("val/loss", self.val_loss, on_step=True, prog_bar=True)
         self.log(

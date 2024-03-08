@@ -62,6 +62,12 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
                 logp_b_s = torch.where(
                     backward_actions == 1, torch.tensor(0.0), -torch.inf
                 ).to(logp_f_s)
+                # When no action is available, just fill with uniform because it won't be picked anyway in the backward_step. Doing this avoids having nan when computing probabilities
+                logp_b_s = torch.where(
+                    (logp_b_s == -torch.inf).all(dim=-1).unsqueeze(1),
+                    torch.tensor(0.0),
+                    logp_b_s,
+                )
                 log_pb += torch.where(
                     dones[:, t] | self.trainer.datamodule.is_initial_state(state),
                     torch.tensor(0.0),

@@ -140,11 +140,9 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         Args:
             states (torch.Tensor[batch_size, max_len, dim]): Batch of states.
         Returns:
-            is_initial (bool): Whether the state is the initial state or not.
+            is_initial (torch.Tensor[batch_size]): Whether the state is the initial state or not.
         """
-        is_initial = (
-            (states == self.s0.to(states.device)).all(dim=-1).all(dim=-1)
-        )  # shape: [batch_size]
+        is_initial = (states == self.s0.to(states.device)).all(dim=-1).all(dim=-1)
         return is_initial
 
     def to_raw(self, states: torch.Tensor) -> list[str]:
