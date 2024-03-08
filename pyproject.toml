@@ -10,6 +10,7 @@ description = ""
 authors = []
 
 [tool.poetry.dependencies]
+tokenizers = "*"
 lightning = ">=2.2.1"
 rootutils = "*"
 hydra-core = "*"
