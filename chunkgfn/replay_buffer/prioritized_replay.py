@@ -6,7 +6,7 @@ from .base_replay_buffer import ReplayBuffer
 
 
 def distance(src: torch.Tensor, dst: torch.Tensor):
-    """Compute the distance between two tensors.
+    """Compute the squared distance between two tensors.
     Args:
         src (torch.Tensor[...]): source tensor
         dst (torch.Tensor[n_samples, ...]): destination tensor
@@ -14,10 +14,7 @@ def distance(src: torch.Tensor, dst: torch.Tensor):
     assert (
         src.shape == dst.shape[1:]
     ), "The source tensor must have the same shape as the destination tensor without the first dimension."
-    src_ = repeat(src, "... -> n_samples ...", n_samples=dst.shape[0])
-    src_ = src_.reshape(dst.shape[0], -1)
-    dst_ = dst.reshape(dst.shape[0], -1)
-    return F.mse_loss(src_, dst_, reduction="none").sum(-1)
+    return ((src.unsqueeze(0) - dst)**2).sum(-1).sum(-1)
 
 
 class PrioritizedReplay(ReplayBuffer):
@@ -71,6 +68,8 @@ class PrioritizedReplay(ReplayBuffer):
             ix = torch.argsort(logreward)
             for key in self.storage.keys():
                 self.storage[key] = self.storage[key][ix]
+
+        # We're a batch and the buffer isn't full yet.
         elif len(self) < self.capacity:
             self.storage["input"] = torch.cat([self.storage["input"], input], dim=0)
             self.storage["trajectories"] = torch.cat(
@@ -90,7 +89,10 @@ class PrioritizedReplay(ReplayBuffer):
             ix = torch.argsort(self.storage["logreward"])
             for key in self.storage.keys():
                 self.storage[key] = self.storage[key][ix]
+                # Ensures that the buffer is the correct size.
                 self.storage[key] = self.storage[key][-self.capacity :]
+
+        # Our buffer is full and we will prioritize diverse, high reward additions.
         else:
             dict_curr_batch = {
                 "input": input,
@@ -100,41 +102,72 @@ class PrioritizedReplay(ReplayBuffer):
                 "final_state": final_state,
                 "logreward": logreward,
             }
-            for i in range(len(final_state)):
-                # This assumes that the replay buffer is ordered in ascending log-reward !
-                if logreward[i] > self.storage["logreward"][0]:
-                    if self.is_conditional:
-                        src = torch.cat([input[i], final_state[i]], dim=-1)
-                        dst = torch.cat(
-                            [self.storage["input"], self.storage["final_state"]], dim=-1
-                        )
-                    else:
-                        src = final_state[i].clone()
-                        dst = self.storage["final_state"].clone()
-                    delta = distance(src, dst)
-                    if min(delta) > self.cutoff_distance:
-                        self.storage = {
-                            key: value[1:] for (key, value) in self.storage.items()
-                        }
-                        ix = torch.searchsorted(self.storage["logreward"], logreward[i])
-                        for key in self.storage.keys():
-                            self.storage[key] = torch.cat(
-                                (
-                                    self.storage[key][:ix],
-                                    dict_curr_batch[key][i : i + 1],
-                                    self.storage[key][ix:],
-                                ),
-                                axis=0,
-                            )
-                    else:
-                        # Find nearest neighbor
-                        ix_nn = torch.argmin(delta)
-                        if self.storage["logreward"][ix_nn] < logreward[i]:
-                            for key in self.storage.keys():
-                                self.storage[key][ix_nn] = dict_curr_batch[key][i]
-                        ix = torch.argsort(self.storage["logreward"])
-                        for key in self.storage.keys():
-                            self.storage[key] = self.storage[key][ix]
+
+            def _apply_idx(idx, d):
+                for k, v in d.items():
+                    d[k] = v[idx, ...]
+
+            # Sort elements by logreward.
+            idx_sorted = torch.argsort(dict_curr_batch["logreward"], descending=True)
+            _apply_idx(idx_sorted, dict_curr_batch)
+
+            # Filter all batch logrewards lower than the smallest logreward in buffer.
+            idx_min_lr = dict_curr_batch["logreward"] > self.storage["logreward"].min()
+            _apply_idx(idx_min_lr, dict_curr_batch)
+
+            # Compute all pairwise distances between the batch and the buffer.
+            curr_dim = dict_curr_batch["final_state"].shape[0]
+            buffer_dim = self.storage["final_state"].shape[0]
+            if curr_dim > 0:
+
+                # Distances should incorperate conditioning vector.
+                if self.is_conditional:
+                    batch = torch.cat(
+                        [dict_curr_batch["input"], dict_curr_batch["final_state"]],
+                        dim=-1,
+                    )
+                    buffer = torch.cat(
+                        [self.storage["input"], self.storage["final_state"]],
+                        dim=-1,
+                    )
+                else:
+                    batch = dict_curr_batch["final_state"]
+                    buffer = self.storage["final_state"]
+
+                # Filter the batch for diverse final_states with high reward.
+                batch_batch_dist = torch.cdist(
+                    batch.view(curr_dim, -1).unsqueeze(0),
+                    batch.view(curr_dim, -1).unsqueeze(0),
+                    p=1.,
+                ).squeeze(0)
+
+                r, w = torch.triu_indices(*batch_batch_dist.shape) # Remove upper diag.
+                batch_batch_dist[r, w] = torch.finfo(batch_batch_dist.dtype).max
+                batch_batch_dist = batch_batch_dist.min(-1)[0]
+
+                # Filter the batch for diverse final_states w.r.t the buffer.
+                batch_buffer_dist = torch.cdist(
+                    batch.view(curr_dim, -1).unsqueeze(0),
+                    buffer.view(buffer_dim, -1).unsqueeze(0),
+                    p=1.,
+                ).squeeze(0).min(-1)[0]
+
+                # Remove non-diverse examples accordin to the above distances.
+                idx_batch_batch = (batch_batch_dist > self.cutoff_distance)
+                idx_batch_buffer = (batch_buffer_dist > self.cutoff_distance)
+                idx_diverse = idx_batch_batch & idx_batch_buffer
+                _apply_idx(idx_diverse, dict_curr_batch)
+
+            # Concatenate everything, sort, and remove leftovers.
+            for k, v in self.storage.items():
+                self.storage[k] = torch.cat((self.storage[k], dict_curr_batch[k]), dim=0)
+
+            idx_sorted = torch.argsort(self.storage["logreward"], descending=False)
+            _apply_idx(idx_sorted, self.storage)
+
+            # Keep largest values.
+            for k, v in self.storage.items():
+                self.storage[k] = self.storage[k][-self.capacity :]
 
     def sample(self, num_samples: int):
         """Sample from the replay buffer according to the logreward and without replacement.
