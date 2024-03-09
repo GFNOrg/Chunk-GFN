@@ -88,6 +88,9 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         self.action_len = torch.Tensor(
             [1, 1, 1]
         ).long()  # Length of each action. Can change during training.
+        self.action_frequency = torch.zeros(
+            len(self.actions)
+        )  # Tracks the frequency of each action. Can change during training.
 
         self.create_modes()
 
@@ -213,8 +216,8 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         modes_found = set([self.modes[i] for i in mode_indices])
         self.discovered_modes.update(modes_found)
         metrics = {
-            "num_modes": len(self.discovered_modes),
-            "num_visited": len(self.visited),
+            "num_modes": float(len(self.discovered_modes)),
+            "num_visited": float(len(self.visited)),
         }
 
         return metrics
@@ -259,6 +262,13 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
             ),
         )
         new_state = new_state[:, :max_len, :]
+
+        used_actions = forward_action[
+            ~done
+        ]  # Only picks the actions that actually are used for updating the state.
+        self.action_frequency += torch.bincount(
+            used_actions.to(self.action_frequency.device), minlength=len(self.actions)
+        )
 
         return new_state, done
 
@@ -339,6 +349,9 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
             self.actions.append(token)
             self.action_len = torch.cat(
                 [self.action_len, torch.tensor([len(token)])], dim=0
+            )
+            self.action_frequency = torch.cat(
+                [self.action_frequency, torch.tensor([0.0])], dim=0
             )
 
     def state_dict(self):
