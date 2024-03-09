@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import Any, Tuple
 
+import matplotlib.pyplot as plt
 import torch
+import wandb
 from einops import rearrange, repeat
 from lightning import LightningModule
 from torch import nn
@@ -50,6 +52,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         self.train_logreward = MeanMetric()
         self.val_logreward = MeanMetric()
         self.train_logZ = MeanMetric()
+        self.train_trajectory_length = MeanMetric()
         self.val_correlation = (
             SpearmanCorrCoef()
         )  # Correlation between likelihood and logreward
@@ -168,6 +171,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             actions (torch.Tensor[batch_size, trajectory_length]): Actions for each sample in the batch.
             dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
             state (torch.Tensor[batch_size, seq_length, state_dim]): Final state.
+            trajectory_length (torch.Tensor[batch_size]): Length of the trajectory for each sample in the batch.
         """
         state = self.trainer.datamodule.s0.repeat(batch_size, 1, 1).to(self.device)
         bs, max_len, dim = state.shape
@@ -176,6 +180,9 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         actions = []
         trajectories = []
         dones = []
+        trajectory_length = (
+            torch.zeros((bs)).to(state).long()
+        )  # This tracks the length of trajetcory for each sample in the batch
 
         for t in range(max_len):
             p_f_s = self.forward_model(state)
@@ -208,6 +215,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             act = cat.sample()
 
             new_state, done = self.trainer.datamodule.forward_step(state, act)
+            trajectory_length += ~done  # Increment the length of the trajectory for each sample in the batch as long it's not done.
 
             actions.append(act)
             trajectories.append(state)
@@ -221,7 +229,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         actions = torch.stack(actions, dim=1)
         dones = torch.stack(dones, dim=1)
 
-        return trajectories, actions, dones, state
+        return trajectories, actions, dones, state, trajectory_length
 
     @abstractmethod
     def compute_loss(self, trajectories, actions, dones, logreward):
@@ -302,14 +310,36 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = batch
 
-        trajectories, actions, dones, final_state = self.forward(
+        trajectories, actions, dones, final_state, trajectory_length = self.forward(
             x.shape[0], train=train, epsilon=epsilon, temperature=temperature
         )
 
         logreward = self.trainer.datamodule.compute_logreward(final_state).to(
             final_state
         )
-        return x, trajectories, actions, dones, final_state, logreward
+        return (
+            x,
+            trajectories,
+            actions,
+            dones,
+            final_state,
+            logreward,
+            trajectory_length,
+        )
+
+    def log_action_histogram(self):
+        """Log the action histogram."""
+        fig, ax = plt.subplots()
+        freq = (
+            self.trainer.datamodule.action_frequency
+            / self.trainer.datamodule.action_frequency.sum()
+        )
+        ax.bar(self.trainer.datamodule.actions, freq)
+        ax.set_xlabel("Actions")
+        ax.set_ylabel("Frequency")
+        ax.set_title("Action Frequency Histogram")
+        self.logger.log_metrics({"action_histogram": wandb.Image(fig)})
+        plt.close(fig)
 
     def training_step(self, train_batch, batch_idx) -> Any:
         if self.epsilon_scheduler is not None:
@@ -321,11 +351,13 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         else:
             temperature = None
 
-        x, trajectories, actions, dones, final_state, logreward = self.sample(
-            train_batch,
-            train=True,
-            epsilon=epsilon,
-            temperature=temperature,
+        x, trajectories, actions, dones, final_state, logreward, trajectory_length = (
+            self.sample(
+                train_batch,
+                train=True,
+                epsilon=epsilon,
+                temperature=temperature,
+            )
         )
         batch_size = x.shape[0]
         nsamples_replay = int(batch_size * self.hparams.ratio_from_replay_buffer)
@@ -364,6 +396,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         self.train_loss(loss)
         self.train_logreward(logreward.mean())
         self.train_logZ(logZ.mean())
+        self.train_trajectory_length(trajectory_length.float().mean())
 
         self.log("train/loss", self.train_loss, on_step=True, prog_bar=True)
         self.log(
@@ -391,7 +424,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
 
         self.log(
             "replay_buffer_size",
-            len(self.replay_buffer),
+            float(len(self.replay_buffer)),
             on_step=False,
             on_epoch=True,
             prog_bar=True,
@@ -403,6 +436,14 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             on_epoch=True,
             prog_bar=True,
         )
+        self.log(
+            "train/trajectory_length",
+            self.train_trajectory_length,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
+        self.log_action_histogram()
         for metric_name in additional_metrics:
             self.log(
                 f"train/{metric_name}",
