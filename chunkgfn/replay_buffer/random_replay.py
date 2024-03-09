@@ -1,6 +1,6 @@
 import torch
 
-from . import ReplayBuffer
+from .base_replay_buffer import ReplayBuffer
 
 
 class RandomReplay(ReplayBuffer):

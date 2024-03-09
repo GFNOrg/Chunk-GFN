@@ -322,4 +322,3 @@ class ChunkModule(LightningDataModule):
             else:
                 parent_actions[i] = 1
         return parent_actions
-        return parent_actions

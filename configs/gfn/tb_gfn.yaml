@@ -1,4 +1,4 @@
-_target_: chunkgfn.gfn.cond_tb_gfn.Cond_TBGFN
+_target_: chunkgfn.gfn.tb_gfn.TBGFN
 
 optimizer:
   _target_: torch.optim.Adam
@@ -8,41 +8,31 @@ optimizer:
 scheduler: null
 
 forward_model:
-  _target_: chunkgfn.models.rnn.RNN_Embedding
+  _target_: chunkgfn.models.rnn.UnconditionalRNN
   num_layers: 1
   hidden_dim: 128
-  embedding_dim: 128
-  input_dim: 4
-  state_dim: 4
-  n_actions: 4
+  state_dim: 3
+  n_actions: 3
   act:
     _target_: torch.nn.ReLU
   
 backward_model: null
 
-partition_model:
-  _target_: chunkgfn.models.rnn.logZ
-  num_layers: 1
-  hidden_dim: 128
-  input_vocab_size: 4
-  act:
-    _target_: torch.nn.ReLU
-
 epsilon_scheduler:
   _target_: chunkgfn.schedulers.linear_schedule.LinearSchedule
   initial_value: 0.5
-  final_value: 0
+  final_value: 0.1
   max_epochs: ${trainer.max_epochs}
 
 replay_buffer:
   _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
   capacity: 2500
   cutoff_distance: 5
+  is_conditional: False
 
-forward_lr: 5e-4
-partition_lr: 1e-4
+forward_lr: 1e-4
+partition_lr: 1e-3
 monitor: val/logreward
 ratio_from_replay_buffer: 0.55 # Ratio of samples from replay buffer
-ratio_backward: 0.5 # Ratio of samples from backward model
-n_trajectories: 20 # Number of trajectories to sample per input
+n_trajectories: 1 # Number of test trajectories to sample
 reward_temperature: 1.0 # Temperature for the reward

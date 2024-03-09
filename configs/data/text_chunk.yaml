@@ -4,4 +4,4 @@ batch_size: 32
 num_workers: 3
 pin_memory: False
 max_len: 30
-num_sentences: 1000
+num_sentences: 300
