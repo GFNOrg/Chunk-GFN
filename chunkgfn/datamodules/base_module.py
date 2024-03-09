@@ -14,12 +14,14 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         batch_size: int = 64,
         num_workers: int = 0,
         pin_memory: bool = False,
+        persistent_workers: bool = True,
     ) -> None:
         """Initialize the `BaseEnvironmentModule`.
         Args:
             batch_size (int): The batch size. Defaults to 64.
             num_workers (int): The number of workers for the dataloaders. Defaults to 0.
             pin_memory (bool): Whether to pin memory for the dataloaders. Defaults to False.
+
         """
         super().__init__()
 
@@ -30,6 +32,7 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         self.data_train: Optional[Dataset] = None
         self.data_val: Optional[Dataset] = None
         self.data_test: Optional[Dataset] = None
+        self.persistent_workers = persistent_workers
 
     @abstractmethod
     def setup(self, stage: Optional[str] = None) -> None:
@@ -65,6 +68,7 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=True,
+            persistent_workers=self.persistent_workers,
         )
 
     def val_dataloader(self) -> DataLoader[Any]:
@@ -78,6 +82,7 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=False,
+            persistent_workers=self.persistent_workers,
         )
 
     def test_dataloader(self) -> DataLoader[Any]:
@@ -91,6 +96,7 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=False,
+            persistent_workers=self.persistent_workers,
         )
 
     @abstractmethod
@@ -165,8 +171,9 @@ class BaseUnconditionalEnvironmentModule(BaseEnvironmentModule):
         batch_size: int = 64,
         num_workers: int = 0,
         pin_memory: bool = False,
+        **kwargs,
     ) -> None:
-        super().__init__(batch_size, num_workers, pin_memory)
+        super().__init__(batch_size, num_workers, pin_memory, **kwargs)
         """Initialize the `BaseUnconditionalEnvironmentModule`.
         Args:
             num_train_iterations (int): The number of training iterations per epoch.
@@ -175,7 +182,7 @@ class BaseUnconditionalEnvironmentModule(BaseEnvironmentModule):
             batch_size (int): The batch size. Defaults to 64.
             num_workers (int): The number of workers for the dataloaders. Defaults to 0.
             pin_memory (bool): Whether to pin memory for the dataloaders. Defaults to False.
-        
+
         """
         self.num_train_iterations = num_train_iterations
         self.num_val_iterations = num_val_iterations
