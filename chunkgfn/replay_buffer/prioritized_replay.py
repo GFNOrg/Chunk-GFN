@@ -1,6 +1,4 @@
 import torch
-import torch.nn.functional as F
-from einops import repeat
 
 from .base_replay_buffer import ReplayBuffer
 
@@ -14,7 +12,7 @@ def distance(src: torch.Tensor, dst: torch.Tensor):
     assert (
         src.shape == dst.shape[1:]
     ), "The source tensor must have the same shape as the destination tensor without the first dimension."
-    return ((src.unsqueeze(0) - dst)**2).sum(-1).sum(-1)
+    return ((src.unsqueeze(0) - dst) ** 2).sum(-1).sum(-1)
 
 
 class PrioritizedReplay(ReplayBuffer):
@@ -120,7 +118,6 @@ class PrioritizedReplay(ReplayBuffer):
             curr_dim = dict_curr_batch["final_state"].shape[0]
             buffer_dim = self.storage["final_state"].shape[0]
             if curr_dim > 0:
-
                 # Distances should incorporate conditioning vector.
                 if self.is_conditional:
                     batch = torch.cat(
@@ -139,36 +136,41 @@ class PrioritizedReplay(ReplayBuffer):
                 batch_batch_dist = torch.cdist(
                     batch.view(curr_dim, -1).unsqueeze(0),
                     batch.view(curr_dim, -1).unsqueeze(0),
-                    p=1.,
+                    p=1.0,
                 ).squeeze(0)
 
-                r, w = torch.triu_indices(*batch_batch_dist.shape) # Remove upper diag.
+                r, w = torch.triu_indices(*batch_batch_dist.shape)  # Remove upper diag.
                 batch_batch_dist[r, w] = torch.finfo(batch_batch_dist.dtype).max
                 batch_batch_dist = batch_batch_dist.min(-1)[0]
 
                 # Filter the batch for diverse final_states w.r.t the buffer.
-                batch_buffer_dist = torch.cdist(
-                    batch.view(curr_dim, -1).unsqueeze(0),
-                    buffer.view(buffer_dim, -1).unsqueeze(0),
-                    p=1.,
-                ).squeeze(0).min(-1)[0]
+                batch_buffer_dist = (
+                    torch.cdist(
+                        batch.view(curr_dim, -1).unsqueeze(0),
+                        buffer.view(buffer_dim, -1).unsqueeze(0),
+                        p=1.0,
+                    )
+                    .squeeze(0)
+                    .min(-1)[0]
+                )
 
                 # Remove non-diverse examples accordin to the above distances.
-                idx_batch_batch = (batch_batch_dist > self.cutoff_distance)
-                idx_batch_buffer = (batch_buffer_dist > self.cutoff_distance)
+                idx_batch_batch = batch_batch_dist > self.cutoff_distance
+                idx_batch_buffer = batch_buffer_dist > self.cutoff_distance
                 idx_diverse = idx_batch_batch & idx_batch_buffer
                 _apply_idx(idx_diverse, dict_curr_batch)
 
             # Concatenate everything, sort, and remove leftovers.
             for k, v in self.storage.items():
-                self.storage[k] = torch.cat((self.storage[k], dict_curr_batch[k]), dim=0)
+                self.storage[k] = torch.cat(
+                    (self.storage[k], dict_curr_batch[k]), dim=0
+                )
 
             idx_sorted = torch.argsort(self.storage["logreward"], descending=False)
             _apply_idx(idx_sorted, self.storage)
 
             for k, v in self.storage.items():
                 self.storage[k] = self.storage[k][-self.capacity :]  # Keep largest.
-
 
     def sample(self, num_samples: int):
         """Sample from the replay buffer according to the logreward and without replacement.
