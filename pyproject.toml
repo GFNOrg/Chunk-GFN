@@ -4,13 +4,25 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "chunkgfn"
-packages = [{include = "chunkgfn", from = "src"}]
+packages = [{include = "chunkgfn"}]
 version = "0.0.1"
 description = ""
 authors = []
 
 [tool.poetry.dependencies]
+lightning = ">=2.2.1"
+rootutils = "*"
+hydra-core = "*"
+biopython = ">=1.81"
 numpy = ">=1.21.2"
+pandas = "*"
 python = "^3.10"
+tokenizers = ">=0.14.1"
 torch = ">=1.9.0"
 torchgfn = ">=1.1"
+rich = "*"
+hydra_colorlog = "*"
+polyleven = "*"
+wandb = ">=0.12.10"
+seaborn = "*"
+jupyter = "*"

@@ -190,9 +190,15 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
 
             valid_actions_mask = self.trainer.datamodule.get_invalid_actions_mask(state)
 
-            p_f_s = torch.where(valid_actions_mask, p_f_s, torch.tensor(NEG_INF))
+            p_f_s = torch.where(
+                valid_actions_mask,
+                p_f_s,
+                torch.tensor(NEG_INF).to(p_f_s),
+            )
             uniform_dist_probs = torch.where(
-                valid_actions_mask, uniform_dist_probs, torch.tensor(0)
+                valid_actions_mask,
+                uniform_dist_probs,
+                torch.tensor(0.).to(uniform_dist_probs),
             )
 
             if train:
