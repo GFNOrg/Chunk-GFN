@@ -166,8 +166,6 @@ class BaseUnconditionalEnvironmentModule(BaseEnvironmentModule):
     def __init__(
         self,
         num_train_iterations: int,
-        num_val_iterations: int,
-        num_test_iterations: int,
         batch_size: int = 64,
         num_workers: int = 0,
         pin_memory: bool = False,
@@ -177,16 +175,12 @@ class BaseUnconditionalEnvironmentModule(BaseEnvironmentModule):
         """Initialize the `BaseUnconditionalEnvironmentModule`.
         Args:
             num_train_iterations (int): The number of training iterations per epoch.
-            num_val_iterations (int): The number of val iterations per epoch.
-            num_test_iterations (int): The number of test iterations per epoch.
             batch_size (int): The batch size. Defaults to 64.
             num_workers (int): The number of workers for the dataloaders. Defaults to 0.
             pin_memory (bool): Whether to pin memory for the dataloaders. Defaults to False.
 
         """
         self.num_train_iterations = num_train_iterations
-        self.num_val_iterations = num_val_iterations
-        self.num_test_iterations = num_test_iterations
 
     def setup(self, stage: Optional[str] = None) -> None:
         """Instantiate dummy datasets for the trainer to use."""
