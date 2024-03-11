@@ -42,8 +42,6 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         max_len: int,
         num_modes: int,
         num_train_iterations: int,
-        num_val_iterations: int,
-        num_test_iterations: int,
         threshold: float,
         oracle_difficulty: str = "medium",
         batch_size: int = 64,
@@ -54,8 +52,6 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
     ) -> None:
         super().__init__(
             num_train_iterations,
-            num_val_iterations,
-            num_test_iterations,
             batch_size,
             num_workers,
             pin_memory,
