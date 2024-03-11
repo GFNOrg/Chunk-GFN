@@ -198,7 +198,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             uniform_dist_probs = torch.where(
                 valid_actions_mask,
                 uniform_dist_probs,
-                torch.tensor(0.).to(uniform_dist_probs),
+                torch.tensor(0.0).to(uniform_dist_probs),
             )
 
             if train:
@@ -344,6 +344,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         ax.set_xlabel("Actions")
         ax.set_ylabel("Frequency")
         ax.set_title("Action Frequency Histogram")
+        plt.xticks(rotation=45)
         self.logger.log_metrics({"action_histogram": wandb.Image(fig)})
         plt.close(fig)
 

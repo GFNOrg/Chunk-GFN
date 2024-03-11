@@ -119,25 +119,29 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
 
         if self.oracle_difficulty == "medium":
             vocab = ["00000000", "11111111", "11110000", "00001111", "00111100"]
-            self.modes = [
-                "".join(random.choices(vocab, k=self.max_len // len(vocab[0])))
-                for _ in range(self.num_modes)
-            ]
+            self.modes = set()
+            while len(self.modes) < self.num_modes:
+                self.modes.add(
+                    "".join(random.choices(vocab, k=self.max_len // len(vocab[0])))
+                )
+            self.modes = list(self.modes)
 
         elif self.oracle_difficulty == "hard":
             vocab = ["00000000", "11111111", "11110000", "00001111", "00111100"]
-            self.modes = [
-                "".join(
-                    random.choices(
-                        vocab,
-                        k=random.randint(
-                            (self.max_len // len(vocab[0])) * 0.5,
-                            (self.max_len // len(vocab[0])),
-                        ),
+            self.modes = set()
+            while len(self.modes) < self.num_modes:
+                self.modes.add(
+                    "".join(
+                        random.choices(
+                            vocab,
+                            k=random.randint(
+                                (self.max_len // len(vocab[0])) * 0.5,
+                                (self.max_len // len(vocab[0])),
+                            ),
+                        )
                     )
                 )
-                for _ in range(self.num_modes)
-            ]
+            self.modes = list(self.modes)
         self.len_modes = torch.tensor([len(m) for m in self.modes])
 
     def is_initial_state(self, states: torch.Tensor) -> torch.Tensor:
