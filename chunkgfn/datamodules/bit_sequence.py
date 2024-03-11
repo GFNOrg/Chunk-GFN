@@ -115,20 +115,21 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         return one_hot_action_tensor
 
     def create_modes(self):
-        """Create the modes for the bit-sequence task."""
-
+        """Create the modes for the bit-sequence task depending on the oracle difficulty.
+        If the difficulty is "medium" then the modes all have the same length `max_len`
+        and are unique.
+        If the difficulty is "hard" then the modes have different lengths with
+        maximum length of `max_len` and minimum length of `max_len//2` and are unique.
+        """
+        vocab = ["00000000", "11111111", "11110000", "00001111", "00111100"]
+        self.modes = set()
         if self.oracle_difficulty == "medium":
-            vocab = ["00000000", "11111111", "11110000", "00001111", "00111100"]
-            self.modes = set()
             while len(self.modes) < self.num_modes:
                 self.modes.add(
                     "".join(random.choices(vocab, k=self.max_len // len(vocab[0])))
                 )
-            self.modes = list(self.modes)
 
         elif self.oracle_difficulty == "hard":
-            vocab = ["00000000", "11111111", "11110000", "00001111", "00111100"]
-            self.modes = set()
             while len(self.modes) < self.num_modes:
                 self.modes.add(
                     "".join(
@@ -141,7 +142,8 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
                         )
                     )
                 )
-            self.modes = list(self.modes)
+
+        self.modes = list(self.modes)
         self.len_modes = torch.tensor([len(m) for m in self.modes])
 
     def is_initial_state(self, states: torch.Tensor) -> torch.Tensor:
