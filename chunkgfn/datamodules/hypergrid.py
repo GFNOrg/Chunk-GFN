@@ -116,7 +116,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
 
         self.s0 = torch.zeros(self.ndim + 1)  # Initial state
         self.sf = torch.cat(
-            [torch.ones(self.ndim) * (self.side_length - 1), torch.tensor(1)]
+            [torch.ones(self.ndim) * (self.side_length - 1), torch.tensor([1])]
         )  # Final state
         self.actions = [ALPHABET[i] for i in range(self.ndim)] + [
             "<EXIT>"
@@ -127,8 +127,6 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         self.action_frequency = torch.zeros(
             len(self.actions)
         )  # Tracks the frequency of each action. Can change during training.
-
-        self._create_modes()
 
     @property
     def acting_tensor(self) -> torch.Tensor:
