@@ -103,6 +103,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         assert (
             num_modes <= (side_length - 1 / 4) ** ndim
         ), f"Number of modes is too large. Keep it lower than (side_length - 1 / 4) ** ndim = {(side_length - 1 / 4) ** ndim}."
+        assert side_length > 1, "Side length should be greater than 1."
         self.ndim = ndim
         self.side_length = side_length
         self.num_modes = num_modes
@@ -136,7 +137,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         Returns:
             acting_tensor (torch.Tensor[n_actions, ndim]): A tensor that summarizes the exact operation to be performed on the state.
         """
-        acting_tensor = torch.zeros(len(self.actions, self.ndim + 1))
+        acting_tensor = torch.zeros(len(self.actions), self.ndim + 1)
         for i, action in enumerate(self.actions):
             # The <EXIT> action is like adding a zero vector to the state.
             if action != "<EXIT>":
@@ -257,6 +258,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         actions_mask = (diff.unsqueeze(1) >= self.acting_tensor.unsqueeze(0)).all(
             dim=-1
         )
+        actions_mask[self.is_terminal_state(states)] = False
 
         return actions_mask
 
@@ -268,6 +270,12 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         diff = states - self.s0.to(states)
         parent_actions = (diff.unsqueeze(1) >= self.acting_tensor.unsqueeze(0)).all(
             dim=-1
+        )
+
+        # When it's an exit state, only the <EXIT> backward action is allowed.
+        parent_actions[self.is_terminal_state(states)] = False
+        parent_actions[self.is_terminal_state(states), self.actions.index("<EXIT>")] = (
+            True
         )
         return parent_actions
 
