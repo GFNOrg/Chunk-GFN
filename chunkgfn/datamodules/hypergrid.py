@@ -1,6 +1,3 @@
-import random
-
-import numpy as np
 import torch
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
@@ -9,19 +6,89 @@ from tokenizers.trainers import BpeTrainer
 
 from .base_module import BaseUnconditionalEnvironmentModule
 
+ALPHABET = [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    "P",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    "X",
+    "Y",
+    "Z",
+]
+
+
+def _safe_log(x):
+    return torch.log(x + 1e-8)
+
+
+class HyperGridDataset(torch.utils.data.Dataset):
+    def __init__(self, samples, logrewards):
+        self.samples = samples
+        self.logrewards = logrewards
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, index):
+        """Get the sample and logreward at the given index.
+        Args:
+            index (int): The index.
+        Returns:
+            sample (torch.Tensor[max_len, dim]): The sample.
+            logr (torch.Tensor): The logreward.
+        """
+        sample, logr = self.samples[index], self.logrewards[index]
+        return sample, logr
+
 
 class HyperGridModule(BaseUnconditionalEnvironmentModule):
     """A `HyperGrid` for defining the bit-sequence task in (Malkin, et. al. 2022).
-    Based on: https://gist.github.com/MJ10/59bfcc8bce4b5fce9c1c38a81b1105ae
+    Based on: https://github.com/GFNOrg/torchgfn/blob/master/src/gfn/gym/hypergrid.py
+
+    We represent the state as a (ndim+1) tensor where the last "bit" is the "exit" bit.
+
+    Args:
+        ndim (int): Number of dimensions of the hypergrid.
+        side_length (int): Side length of the hypergrid.
+        num_modes (int): Number of modes to test against.
+        R0 (float): Base reward.
+        R1 (float): Reward for the first condition.
+        R2 (float): Reward for the second condition.
+        num_train_iterations (int): Number of training iterations.
+        batch_size (int, optional): Batch size. Defaults to 64.
+        num_workers (int, optional): Number of workers. Defaults to 0.
+        pin_memory (bool, optional): Whether to pin memory. Defaults to False.
     """
 
     def __init__(
         self,
-        dimension: int,
+        ndim: int,
         side_length: int,
+        num_modes: int,
+        R0: float,
+        R1: float,
+        R2: float,
         num_train_iterations: int,
         batch_size: int = 64,
-        sample_exact_length: bool = False,
         num_workers: int = 0,
         pin_memory: bool = False,
         **kwargs,
@@ -33,201 +100,127 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
             pin_memory,
             **kwargs,
         )
-        self.dimension = dimension
+        assert (
+            num_modes <= (side_length - 1 / 4) ** ndim
+        ), f"Number of modes is too large. Keep it lower than (side_length - 1 / 4) ** ndim = {(side_length - 1 / 4) ** ndim}."
+        self.ndim = ndim
         self.side_length = side_length
-        self.sample_exact_length = sample_exact_length
+        self.num_modes = num_modes
+        self.R0 = R0
+        self.R1 = R1
+        self.R2 = R2
 
         # Environment variables
         self.discovered_modes = set()  # Tracks the number of modes we discovered
         self.visited = set()  # Tracks the number of states we visited
 
-        self.s0 = -torch.ones(
-            1 + self.max_len, len(self.atomic_tokens)
-        )  # Initial state
-        self.padding_token = -torch.ones(len(self.atomic_tokens))
-        self.eos_token = torch.tensor([1, 0, 0])
-        self.actions = [
-            "<EOS>",
-            "0",
-            "1",
-        ]  # Actions can change during training. Not to be confused with atomic_tokens.
+        self.s0 = torch.zeros(self.ndim + 1)  # Initial state
+        self.sf = torch.cat(
+            [torch.ones(self.ndim) * (self.side_length - 1), torch.tensor(1)]
+        )  # Final state
+        self.actions = [ALPHABET[i] for i in range(self.ndim)] + [
+            "<EXIT>"
+        ]  # Actions can change during training
         self.action_len = torch.Tensor(
-            [1, 1, 1]
+            [1] * len(self.actions)
         ).long()  # Length of each action. Can change during training.
         self.action_frequency = torch.zeros(
             len(self.actions)
         )  # Tracks the frequency of each action. Can change during training.
 
-        self.create_modes()
+        self._create_modes()
 
     @property
-    def one_hot_action_tensor(self):
-        """One-hot encoding tensor for self.actions. Actions that are composed of more than an atomic token,
-        will have a one-hot encoding that spans multiple timesteps.
+    def acting_tensor(self) -> torch.Tensor:
+        """A tensor that summarizes the exact operation to be performed on the state.
+        For example, If we have a chunk of actions [A, B, C] then the resulting tensor
+        for that action will be: [1,1,1]
+        Returns:
+            acting_tensor (torch.Tensor[n_actions, ndim]): A tensor that summarizes the exact operation to be performed on the state.
         """
-        one_hot_action_tensor = -torch.ones(
-            len(self.actions), self.action_len.max().item(), len(self.atomic_tokens)
-        )
-        for action in self.actions:
-            idx = self.actions.index(action)
-            if action == "<EOS>":
-                one_hot_action_tensor[idx, :1] = torch.eye(len(self.atomic_tokens))[
-                    self.atomic_tokens.index(action)
-                ]
+        acting_tensor = torch.zeros(len(self.actions, self.ndim + 1))
+        for i, action in enumerate(self.actions):
+            # The <EXIT> action is like adding a zero vector to the state.
+            if action != "<EXIT>":
+                for a in action:
+                    acting_tensor[i, ALPHABET.index(a)] += 1
             else:
-                one_hot_action_tensor[idx, : len(action)] = torch.eye(
-                    len(self.atomic_tokens)
-                )[[self.atomic_tokens.index(x) for x in action]]
-        return one_hot_action_tensor
-
-    def create_modes(self):
-        """Create the modes for the bit-sequence task."""
-
-        if self.oracle_difficulty == "medium":
-            vocab = ["00000000", "11111111", "11110000", "00001111", "00111100"]
-            self.modes = [
-                "".join(random.choices(vocab, k=self.max_len // len(vocab[0])))
-                for _ in range(self.num_modes)
-            ]
-
-        elif self.oracle_difficulty == "hard":
-            vocab = ["00000000", "11111111", "11110000", "00001111", "00111100"]
-            self.modes = [
-                "".join(
-                    random.choices(
-                        vocab,
-                        k=random.randint(
-                            (self.max_len // len(vocab[0])) * 0.5,
-                            (self.max_len // len(vocab[0])),
-                        ),
-                    )
-                )
-                for _ in range(self.num_modes)
-            ]
-        self.len_modes = torch.tensor([len(m) for m in self.modes])
+                acting_tensor[i, -1] = 1  # The "exit" bit is on.
+        return acting_tensor
 
     def is_initial_state(self, states: torch.Tensor) -> torch.Tensor:
         """Check if the state is the initial state.
         Args:
-            states (torch.Tensor[batch_size, max_len, dim]): Batch of states.
+            states (torch.Tensor[batch_size, ndim+1]): Batch of states.
         Returns:
             is_initial (torch.Tensor[batch_size]): Whether the state is the initial state or not.
         """
-        is_initial = (states == self.s0.to(states.device)).all(dim=-1).all(dim=-1)
+        is_initial = (states == self.s0.to(states.device)).all(dim=-1)
         return is_initial
 
-    def to_raw(self, states: torch.Tensor) -> list[str]:
-        """Convert the states to raw data.
+    def is_terminal_state(self, states: torch.Tensor) -> torch.Tensor:
+        """Check if the state is terminal. The state is terminal if the "exit" bit is ON.
         Args:
-            states (torch.Tensor[batch_size, max_len, dim]): Batch of states.
+            states (torch.Tensor[batch_size, ndim+1]): Batch of states.
         Returns:
-            raw (list[str]): List of states in their string representation.
+            is_terminal (torch.Tensor[batch_size]): Whether the state is terminal or not.
         """
-        strings = []
-        for state in states.cpu():
-            # Cut the state before it arrives at [-1,-1,...]
-            nonzero = (state == self.padding_token).nonzero()
-            if len(nonzero) > 0:
-                state = state[: nonzero[0][0]]
-
-            indices = state.argmax(dim=-1)
-            strings.append("".join([self.atomic_tokens[i] for i in indices]))
-        return strings
+        is_terminal = states[:, -1] == 1
+        return is_terminal
 
     def compute_logreward(self, states: torch.Tensor) -> torch.Tensor:
-        """Compute the reward for the given state and action.
+        """Compute the logreward for the given state. We use the logreward formula from (Malkin, et. al. 2022).
+        :math:
+        ```
+        R(s^T) = R0 + R1\prod_{i=1}^D \mathbb{1}\left[\lvert \frac{s^d}{H-1}
+        -0.5\rvert\in (0.25,0.5]\right] + R2\prod_{i=1}^D \mathbb{1}\left[\lvert \frac{s^d}{H-1}-0.5\rvert\in (0.3,0.4]\right]
+        ```
         Args:
-            state (torch.Tensor[batch_size, max_len, dim]): Batch of states.
+            state (torch.Tensor[batch_size, ndim]): Batch of states.
         Returns:
-            reward (torch.Tensor[batch_size]): Batch of rewards.
+            logreward (torch.Tensor[batch_size]): Batch of logreward.
         """
-        strings = [
-            s.replace("<EOS>", "") for s in self.to_raw(states)
-        ]  # remove <EOS> tokens for computing reward
+        if len(states.shape) == self.ndim + 1:
+            states = states[:, :-1]  # If the state contains the "exit" bit, remove it.
 
-        dists = torch.tensor([[levenshtein(s, i) for i in self.modes] for s in strings])
-        values, indices = torch.min(dists, dim=-1)
-        reward = 1 - values / self.len_modes[indices]
-        return reward
-
-    def compute_logreward_from_strings(self, strings: list[str]) -> torch.Tensor:
-        """Compute the reward for a list of strings directly.
-        Args:
-            string (list[str]): List of strings.
-        Returns:
-            reward (torch.Tensor): Batch of rewards.
-        """
-        dists = torch.tensor([[levenshtein(s, i) for i in self.modes] for s in strings])
-        values, indices = torch.min(dists, dim=-1)
-        reward = 1 - values / self.len_modes[indices]
-        return reward
+        normalized_coords = (states / (self.side_length - 1) - 0.5).abs()
+        reward = (
+            self.R0
+            + self.R1
+            * torch.prod(
+                (normalized_coords > 0.25) & (normalized_coords <= 0.5), dim=-1
+            )
+            + self.R2
+            * torch.prod((normalized_coords > 0.3) & (normalized_coords <= 0.4), dim=-1)
+        )
+        log_reward = _safe_log(reward)
+        return log_reward
 
     def compute_metrics(self, states: torch.Tensor) -> dict[str, torch.Tensor]:
         """Compute metrics for the given state.
         Args:
-            state (torch.Tensor[batch_size, max_len, dim]): Batch of states.
+            state (torch.Tensor[batch_size, ndim+1]): Batch of states.
         Returns:
             metrics (dict[str, torch.Tensor]): Dictionary of metrics.
         """
-        strings = [
-            s.replace("<EOS>", "") for s in self.to_raw(states)
-        ]  # remove <EOS> tokens
-        self.visited.update(set(strings))
-        dists = torch.tensor([[levenshtein(s, i) for i in self.modes] for s in strings])
-        values, indices = torch.min(dists, dim=-1)
-        reward = 1 - values / self.len_modes[indices]
-        mode_indices = indices[
-            reward > self.threshold
-        ].tolist()  # Find the indices of the modes that are close to the samples
-        modes_found = set([self.modes[i] for i in mode_indices])
-        self.discovered_modes.update(modes_found)
-        metrics = {
-            "num_modes": float(len(self.discovered_modes)),
-            "num_visited": float(len(self.visited)),
-        }
 
-        return metrics
+        # TODO
+        NotImplementedError
 
     def forward_step(self, state: torch.Tensor, forward_action: torch.Tensor):
-        """Change the state after you apply the forward action.
+        """Change the state after you apply the forward action only if
+        it's not a terminal state.
         Args:
-            state (torch.Tensor[batch_size, max_len, dim]): Batch of states.
-            forward_action (torch.Tensor[batch_size]): Batch of forward actions. Each element corresponds to the index of the action.
+            state (torch.Tensor[batch_size, ndim+1]): Batch of states.
+            forward_action (torch.Tensor[batch_size]): Batch of forward actions.
+                Each element corresponds to the index of the action.
         Returns:
-            new_state (torch.Tensor[batch_size, max_len, dim]): Batch of new states.
-            done (torch.Tensor[batch_size]): Whether the trajectory is done or not.
+            new_state (torch.Tensor[batch_size, ndim+1]): Batch of new states.
+            done (torch.Tensor[batch_size]): Whether state (and not new_state) is done or not.
         """
-        bs, max_len, dim = state.shape
-        eos_token = self.eos_token.to(state)
-        padding_token = self.padding_token.to(state)
-        one_hot_action_tensor = self.one_hot_action_tensor.to(state.device)
-        max_action_len = one_hot_action_tensor.shape[1]
-        # Update the state by filling the current timestep with the sampled action only if it doesn't contain EOS token
-        new_state = torch.cat(
-            [
-                state.clone(),
-                padding_token.unsqueeze(0).unsqueeze(1).repeat(bs, max_action_len, 1),
-            ],
-            dim=1,
-        )
-        start_indices = torch.argmax(
-            ((state == padding_token).all(dim=-1) + 0), dim=-1
-        )  # Where to start inserting action
-        index = start_indices.unsqueeze(1) + torch.arange(max_action_len).unsqueeze(
-            0
-        ).to(state.device)
-        done = torch.where((state == eos_token).all(dim=-1).any(dim=-1), True, False)
-        new_state = torch.where(
-            done.unsqueeze(1).unsqueeze(2),
-            new_state,
-            torch.scatter(
-                new_state,
-                1,
-                index.unsqueeze(2).repeat(1, 1, dim),
-                one_hot_action_tensor[forward_action],
-            ),
-        )
-        new_state = new_state[:, :max_len, :]
+        done = self.is_terminal_state(state)
+        new_state = state.clone()
+        new_state[~done] += self.acting_tensor[forward_action[~done]]
 
         used_actions = forward_action[
             ~done
@@ -239,58 +232,46 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         return new_state, done
 
     def backward_step(self, state: torch.Tensor, backward_action: torch.Tensor):
-        """Change the state after you apply the backward action.
+        """Change the state after you apply the backward action only we're not
+        at the initial state.
         Args:
-            state (torch.Tensor[batch_size, max_len, dim]): Batch of states.
-            backward_action (torch.Tensor[batch_size]): Batch of backward actions. Each element corresponds to the index of the action.
+            state (torch.Tensor[batch_size, ndim+1]): Batch of states.
+            backward_action (torch.Tensor[batch_size]): Batch of backward actions.
+                Each element corresponds to the index of the action.
         Returns:
-            new_state (torch.Tensor[batch_size, max_len, dim]): Batch of new states.
+            new_state (torch.Tensor[batch_size, ndim+1]): Batch of new states.
+            done (torch.Tensor[batch_size]): Whether state (and not new_state) is done or not.
         """
-        bs, max_len, dim = state.shape
+        done = self.is_initial_state(state)
         new_state = state.clone()
-        action_len = self.action_len.to(state.device)
-
-        where_padding = (state == self.padding_token.to(state)).all(dim=-1)
-
-        start_indices = torch.where(
-            where_padding.any(dim=-1), torch.argmax(where_padding + 0, dim=-1), max_len
-        )
-        done = start_indices == 0
-        mask = torch.arange(max_len).unsqueeze(0).to(state.device) >= (
-            start_indices - action_len[backward_action]
-        ).unsqueeze(1)
-        mask &= torch.arange(max_len).unsqueeze(0).to(state.device) < (
-            start_indices
-        ).unsqueeze(1)
-        mask &= (~done).unsqueeze(-1)
-        new_state[mask] = self.padding_token.to(state.device)
-
+        new_state[~done] -= self.acting_tensor[backward_action[~done]]
         return new_state, done
 
     def get_invalid_actions_mask(self, states: torch.Tensor):
         """Get the invalid actions mask for a batch of states.
         Args:
-            states (torch.Tensor[batch_size, max_len, dim]): Batch of states.
+            states (torch.Tensor[batch_size, ndim+1]): Batch of states.
         Returns:
             actions_mask (torch.Tensor[batch_size, n_actions]): Invalid actions mask.
         """
-        # Count how many tokens we can still insert
-        len_tokens_to_go = (
-            (states == self.padding_token.to(states.device)).all(dim=-1).sum(dim=1)
+        # Check the difference between the current state and the final one
+        diff = self.sf.to(states) - states
+        actions_mask = (diff.unsqueeze(1) >= self.acting_tensor.unsqueeze(0)).all(
+            dim=-1
         )
-        actions_mask = len_tokens_to_go.unsqueeze(1) > self.action_len.to(
-            states.device
-        ).unsqueeze(0)  # Only use actions that can fit in the state
-        eos_token_idx = self.atomic_tokens.index("<EOS>")
-        if self.sample_exact_length:
-            # Don't allow the EOS token to be sampled if the state is not full
-            actions_mask[len_tokens_to_go > 1, eos_token_idx] = 0
 
-        actions_mask[len_tokens_to_go <= 1, eos_token_idx] = (
-            1  # We make sure that the EOS token is always available at the last step
-        )
-        actions_mask = actions_mask.to(states.device)
         return actions_mask
+
+    def get_parent_actions(self, states: torch.Tensor):
+        """Get the parent actions of a batch of states.
+        Args:
+            states (torch.Tensor[batch_size, ndim+1]): Batch of states.
+        """
+        diff = states - self.s0.to(states)
+        parent_actions = (diff.unsqueeze(1) >= self.acting_tensor.unsqueeze(0)).all(
+            dim=-1
+        )
+        return parent_actions
 
     def chunk(self, final_states: torch.Tensor):
         """Find the most valuable token from the corpus.
@@ -328,9 +309,9 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
             "action_len": self.action_len,
             "modes": self.modes,
             "len_modes": self.len_modes,
-            "data_val_sequences": self.data_val.sequences,
+            "data_val_samples": self.data_val.samples,
             "data_val_logrewards": self.data_val.logrewards,
-            "data_test_sequences": self.data_test.sequences,
+            "data_test_samples": self.data_test.samples,
             "data_test_logrewards": self.data_test.logrewards,
         }
         return state
@@ -342,98 +323,38 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         self.action_len = state_dict["action_len"]
         self.modes = state_dict["modes"]
         self.len_modes = state_dict["len_modes"]
-        self.data_val = BitSequenceDataset(
-            state_dict["data_val_sequences"], state_dict["data_val_logrewards"]
+        self.data_val = HyperGridDataset(
+            state_dict["data_val_samples"], state_dict["data_val_logrewards"]
         )
-        self.data_test = BitSequenceDataset(
-            state_dict["data_test_sequences"], state_dict["data_test_logrewards"]
+        self.data_test = HyperGridDataset(
+            state_dict["data_test_samples"], state_dict["data_test_logrewards"]
         )
 
-    def get_parent_actions(self, states: torch.Tensor):
-        """Get the parent actions of a batch of states.
-        Args:
-            states (torch.Tensor[batch_size, max_len, state_vocab_dim]): Batch of states.
+    def _create_dataset(self):
+        """Create the a dataset of states near the modes. We sample from all states
+        that are in the plateaux of height 0.5+R0 (see (Malkin, et. al. 2022)).
+        Returns:
+            _modes (list[torch.Tensor[ndim]]): Sampled states.
+            _logrewards (list[torch.Tensor[ndim]]): Samples logrewards.
         """
-        bs, max_len, dim = states.shape
-        padding_token = self.padding_token.to(states.device)
-        one_hot_action_tensor = self.one_hot_action_tensor.to(states.device)
-        final_state = torch.cat(
-            [
-                states,
-                padding_token.unsqueeze(0)
-                .unsqueeze(1)
-                .repeat(bs, 1 + self.action_len.max().item(), 1),
-            ],
-            dim=1,
-        )
-        n_actions = one_hot_action_tensor.shape[0]
-        one_hot_action_tensor = torch.cat(
-            [
-                one_hot_action_tensor,
-                padding_token.unsqueeze(0).unsqueeze(1).repeat(n_actions, 1, 1),
-            ],
-            dim=1,
-        )
-        simplified = torch.argmax(final_state, dim=-1)
-        simplified = torch.where(
-            (final_state == padding_token).all(dim=-1),
-            torch.tensor(len(self.atomic_tokens)),
-            simplified,
-        )  # dummy value to map padding_token to
-        simplified_one_hot_action_tensor = torch.argmax(one_hot_action_tensor, dim=-1)
-        simplified_one_hot_action_tensor = torch.where(
-            (one_hot_action_tensor == padding_token).all(dim=-1),
-            torch.tensor(len(self.atomic_tokens)),
-            simplified_one_hot_action_tensor,
-        )
-        unfolded = simplified.unfold(
-            1, 1 + self.action_len.max().item(), 1
-        )  # This generates a sliding windows view of the tensor that we can compare against.
-        parent_actions = (
-            (unfolded.unsqueeze(-2) == simplified_one_hot_action_tensor)
-            .all(dim=-1)
-            .any(dim=1)
-            .long()
-        )
-        return parent_actions
-
-    def build_test(self):
-        """Build the test points around the modes.
-        returns:
-            test_seq (list[str]): List of test sequences.
-            test_rs (list[float]): List of test logrewards.
-        """
-        test_seq = []
-        vocab = ["0", "1"]
-
-        def noise_seq(x, n):
-            x = list(x)
-            idces = list(range(len(x)))
-            for i in range(n):
-                j = idces.pop(np.random.randint(len(idces)))
-                r = x[j]
-                while r == x[j]:
-                    r = vocab[np.random.randint(len(vocab))]
-                x[j] = r
-            return "".join(x)
-
-        for m in self.modes:
-            for n in range(1, len(m) + 1):
-                s = noise_seq(m, n)
-                s_idx = torch.tensor(
-                    [self.atomic_tokens.index(char) for char in s]
-                    + [self.atomic_tokens.index("<EOS>")]
-                )
-                s_tensor = torch.zeros(s_idx.shape[0], len(self.atomic_tokens))
-                s_tensor[torch.arange(s_idx.shape[0]), s_idx] = 1
-                test_seq.append(s_tensor)
-        test_seq = torch.stack(test_seq, dim=0)
-        test_rs = self.compute_logreward(test_seq)
-        return test_seq, test_rs
+        _modes = []
+        _logrewards = []
+        while len(_modes) < self.num_modes:
+            range_one = torch.randint(
+                0, int(0.25 * (self.side_length - 1)), (self.ndim,)
+            )
+            range_two = torch.randint(
+                int(0.75 * (self.side_length - 1)), self.side_length - 1, (self.ndim,)
+            )
+            mask = (torch.rand(self.ndim) > 0.5).int()
+            mode = range_one * (1 - mask) + range_two * mask
+            if mode.tolist() not in _modes:
+                _modes.append(mode)
+                _logrewards.append(self.compute_logreward(mode))
+        return _modes, _logrewards
 
     def setup_val_test_datasets(self):
-        val_seq, val_rs = self.build_test()
-        test_seq, test_rs = self.build_test()
-
-        self.data_val = BitSequenceDataset(val_seq, val_rs)
-        self.data_test = BitSequenceDataset(test_seq, test_rs)
+        val_samples, val_logrewards = self._create_dataset()
+        test_samples, test_logrewards = self._create_dataset()
+        self.data_val = HyperGridDataset(val_samples, val_logrewards)
+        self.data_test = HyperGridDataset(test_samples, test_logrewards)
