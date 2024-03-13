@@ -115,10 +115,10 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         self.discovered_modes = set()  # Tracks the number of modes we discovered
         self.visited = set()  # Tracks the number of states we visited
 
-        self.s0 = torch.zeros(self.ndim + 1)  # Initial state
+        self.s0 = torch.zeros(self.ndim + 1).long()  # Initial state
         self.sf = torch.cat(
             [torch.ones(self.ndim) * (self.side_length - 1), torch.tensor([1])]
-        )  # Final state
+        ).long()  # Final state
         self.actions = [ALPHABET[i] for i in range(self.ndim)] + [
             "<EXIT>"
         ]  # Actions can change during training
@@ -137,7 +137,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         Returns:
             acting_tensor (torch.Tensor[n_actions, ndim]): A tensor that summarizes the exact operation to be performed on the state.
         """
-        acting_tensor = torch.zeros(len(self.actions), self.ndim + 1)
+        acting_tensor = torch.zeros(len(self.actions), self.ndim + 1).long()
         for i, action in enumerate(self.actions):
             # The <EXIT> action is like adding a zero vector to the state.
             if action != "<EXIT>":
@@ -193,6 +193,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
             * torch.prod((normalized_coords > 0.3) & (normalized_coords <= 0.4), dim=-1)
         )
         log_reward = _safe_log(reward)
+
         return log_reward
 
     def compute_metrics(self, states: torch.Tensor) -> dict[str, torch.Tensor]:
@@ -202,9 +203,20 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         Returns:
             metrics (dict[str, torch.Tensor]): Dictionary of metrics.
         """
-
-        # TODO
-        NotImplementedError
+        metrics = {}
+        states = states[:, :-1]  # The state contains the "exit" bit, remove it.
+        normalized_coords = (states / (self.side_length - 1) - 0.5).abs()
+        modes = torch.prod(
+            (normalized_coords > 0.3) & (normalized_coords <= 0.4), dim=-1
+        )
+        modes_found = set([tuple(s.tolist()) for s in states[modes.bool()]])
+        self.discovered_modes.update(modes_found)
+        self.visited.update([tuple(s.tolist()) for s in states])
+        metrics = {
+            "num_modes": float(len(self.discovered_modes)),
+            "num_visited": float(len(self.visited)),
+        }
+        return metrics
 
     def forward_step(self, state: torch.Tensor, forward_action: torch.Tensor):
         """Change the state after you apply the forward action only if
@@ -218,8 +230,9 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
             done (torch.Tensor[batch_size]): Whether state (and not new_state) is done or not.
         """
         done = self.is_terminal_state(state)
+        acting_tensor = self.acting_tensor.to(state.device)
         new_state = state.clone()
-        new_state[~done] += self.acting_tensor[forward_action[~done]]
+        new_state[~done] += acting_tensor[forward_action[~done]]
 
         used_actions = forward_action[
             ~done
@@ -242,8 +255,9 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
             done (torch.Tensor[batch_size]): Whether state (and not new_state) is done or not.
         """
         done = self.is_initial_state(state)
+        acting_tensor = self.acting_tensor.to(state.device)
         new_state = state.clone()
-        new_state[~done] -= self.acting_tensor[backward_action[~done]]
+        new_state[~done] -= acting_tensor[backward_action[~done]]
         return new_state, done
 
     def get_invalid_actions_mask(self, states: torch.Tensor):
@@ -254,11 +268,13 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
             actions_mask (torch.Tensor[batch_size, n_actions]): Invalid actions mask.
         """
         # Check the difference between the current state and the final one
-        diff = self.sf.to(states) - states
-        actions_mask = (diff.unsqueeze(1) >= self.acting_tensor.unsqueeze(0)).all(
-            dim=-1
-        )
+        diff = self.sf.to(states.device) - states
+        acting_tensor = self.acting_tensor.unsqueeze(0).to(states.device)
+        actions_mask = (diff.unsqueeze(1) >= acting_tensor).all(dim=-1)
         actions_mask[self.is_terminal_state(states)] = False
+        actions_mask[self.is_terminal_state(states), self.actions.index("<EXIT>")] = (
+            True
+        )
 
         return actions_mask
 
@@ -267,10 +283,9 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         Args:
             states (torch.Tensor[batch_size, ndim+1]): Batch of states.
         """
-        diff = states - self.s0.to(states)
-        parent_actions = (diff.unsqueeze(1) >= self.acting_tensor.unsqueeze(0)).all(
-            dim=-1
-        )
+        diff = states - self.s0.to(states.device)
+        acting_tensor = self.acting_tensor.unsqueeze(0).to(states.device)
+        parent_actions = (diff.unsqueeze(1) >= acting_tensor).all(dim=-1)
 
         # When it's an exit state, only the <EXIT> backward action is allowed.
         parent_actions[self.is_terminal_state(states)] = False
@@ -279,19 +294,27 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         )
         return parent_actions
 
-    def chunk(self, final_states: torch.Tensor):
-        """Find the most valuable token from the corpus.
+    def chunk(self, actions: torch.Tensor, dones: torch.Tensor):
+        """Find the most valuable subsequence of actions from the corpus.
         Args:
-            final_states (torch.Tensor[batch_size, max_len, state_vocab_dim]): Batch of final states.
+            actions (torch.Tensor[batch_size, traj_length]): Batch of sequence of actions.
+            dones (torch.Tensor[batch_size, traj_length]): Batch of sequence of terminations.
         """
-        # Convert token indices to strings
-        state_strings = [s.replace("<EOS>", "") for s in self.to_raw(final_states)]
+        # Consider actions for which the trajectory is not yet done
+        dones = dones[:, :-1]  # The last step is always True
+        action_strings = [
+            "".join([self.actions[j] for j in action if not dones[i, j]]).replace(
+                "<EXIT>", ""
+            )
+            for i, action in enumerate(actions)
+        ]
+
         # Apply BPE algorithm to the state_strings and get the most frequent token
         vocab_dict = {k: i for i, k in enumerate(self.actions)}
         tokenizer = Tokenizer(BPE(vocab_dict, [], unk_token="[UNK]"))
         tokenizer.pre_tokenizer = Whitespace()
         trainer = BpeTrainer(vocab_size=len(self.actions))
-        tokenizer.train_from_iterator(state_strings, trainer=trainer)
+        tokenizer.train_from_iterator(action_strings, trainer=trainer)
         new_token = list(
             set(tokenizer.get_vocab().keys()).difference(set(self.actions))
         )[0]
@@ -313,8 +336,6 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
             "visited": self.visited,
             "actions": self.actions,
             "action_len": self.action_len,
-            "modes": self.modes,
-            "len_modes": self.len_modes,
             "data_val_samples": self.data_val.samples,
             "data_val_logrewards": self.data_val.logrewards,
             "data_test_samples": self.data_test.samples,
@@ -327,8 +348,6 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         self.visited = state_dict["visited"]
         self.actions = state_dict["actions"]
         self.action_len = state_dict["action_len"]
-        self.modes = state_dict["modes"]
-        self.len_modes = state_dict["len_modes"]
         self.data_val = HyperGridDataset(
             state_dict["data_val_samples"], state_dict["data_val_logrewards"]
         )
@@ -354,6 +373,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
             )
             mask = (torch.rand(self.ndim) > 0.5).int()
             mode = range_one * (1 - mask) + range_two * mask
+            mode = torch.cat([mode, torch.tensor([1])])
             if mode.tolist() not in _modes:
                 _modes.append(mode)
                 _logrewards.append(self.compute_logreward(mode))
