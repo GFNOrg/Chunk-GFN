@@ -42,8 +42,6 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         max_len: int,
         num_modes: int,
         num_train_iterations: int,
-        num_val_iterations: int,
-        num_test_iterations: int,
         threshold: float,
         oracle_difficulty: str = "medium",
         batch_size: int = 64,
@@ -54,8 +52,6 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
     ) -> None:
         super().__init__(
             num_train_iterations,
-            num_val_iterations,
-            num_test_iterations,
             batch_size,
             num_workers,
             pin_memory,
@@ -113,6 +109,15 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
                     len(self.atomic_tokens)
                 )[[self.atomic_tokens.index(x) for x in action]]
         return one_hot_action_tensor
+
+    def preprocess_state(self, state: torch.Tensor) -> torch.Tensor:
+        """Preprocess the state so that it can be input to the policy model.
+        Args:
+            state (torch.Tensor[batch_size, max_len, dim]): The state.
+        Returns:
+            processed_state (torch.Tensor[batch_size, max_len, dim]): The preprocessed state.
+        """
+        return state
 
     def create_modes(self):
         """Create the modes for the bit-sequence task."""
@@ -326,19 +331,26 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         actions_mask = actions_mask.to(states.device)
         return actions_mask
 
-    def chunk(self, final_states: torch.Tensor):
-        """Find the most valuable token from the corpus.
+    def chunk(self, actions: torch.Tensor, dones: torch.Tensor):
+        """Find the most valuable subsequence of actions from the corpus.
         Args:
-            final_states (torch.Tensor[batch_size, max_len, state_vocab_dim]): Batch of final states.
+            actions (torch.Tensor[batch_size, traj_length]): Batch of sequence of actions.
+            dones (torch.Tensor[batch_size, traj_length]): Batch of sequence of terminations.
         """
         # Convert token indices to strings
-        state_strings = [s.replace("<EOS>", "") for s in self.to_raw(final_states)]
+        dones = dones[:, :-1]  # The last step is always True
+        action_strings = [
+            "".join([self.actions[j] for j in action if not dones[i, j]]).replace(
+                "<EOS>", ""
+            )
+            for i, action in enumerate(actions)
+        ]
         # Apply BPE algorithm to the state_strings and get the most frequent token
         vocab_dict = {k: i for i, k in enumerate(self.actions)}
         tokenizer = Tokenizer(BPE(vocab_dict, [], unk_token="[UNK]"))
         tokenizer.pre_tokenizer = Whitespace()
         trainer = BpeTrainer(vocab_size=len(self.actions))
-        tokenizer.train_from_iterator(state_strings, trainer=trainer)
+        tokenizer.train_from_iterator(action_strings, trainer=trainer)
         new_token = list(
             set(tokenizer.get_vocab().keys()).difference(set(self.actions))
         )[0]
