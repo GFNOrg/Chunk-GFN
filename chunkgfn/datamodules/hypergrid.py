@@ -1,4 +1,5 @@
 import torch
+from einops import rearrange
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
 from tokenizers.pre_tokenizers import Whitespace
@@ -146,6 +147,19 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
             else:
                 acting_tensor[i, -1] = 1  # The "exit" bit is on.
         return acting_tensor
+
+    def preprocess_state(self, state: torch.Tensor) -> torch.Tensor:
+        """Preprocess the state so that it can be input to the policy model.
+        Args:
+            state (torch.Tensor[batch_size, ndim+1]): The state.
+        Returns:
+            processed_state (torch.Tensor[batch_size, (ndim+1)*side_length]): The preprocessed state.
+        """
+        bs, dim = state.shape
+        processed_state = torch.zeros(bs, dim, self.side_length).to(state.device)
+        processed_state = torch.scatter(processed_state, 2, state.unsqueeze(-1), 1)
+        processed_state = rearrange(processed_state, "b d h -> b (d h)")
+        return processed_state
 
     def is_initial_state(self, states: torch.Tensor) -> torch.Tensor:
         """Check if the state is the initial state.

@@ -2,18 +2,15 @@ from torch import nn
 
 
 class MLP(nn.Module):
-    def __init__(
-        self, num_layers, hidden_dim, in_dim, activation, n_actions, side_length
-    ):
+    def __init__(self, num_layers, hidden_dim, in_dim, activation, n_actions):
         super(MLP, self).__init__()
         self.num_layers = num_layers
         self.hidden_dim = hidden_dim
         self.in_dim = in_dim
         self.n_actions = n_actions
-        self.side_length = side_length
 
         self.layers = nn.ModuleList()
-        self.layers.append(nn.Linear(in_dim))
+        self.layers.append(nn.Linear(in_dim, hidden_dim))
         self.layers.append(activation)
         for _ in range(self.num_layers):
             self.layers.append(nn.Linear(hidden_dim, hidden_dim))

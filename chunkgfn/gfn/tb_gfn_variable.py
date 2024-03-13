@@ -52,7 +52,9 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
         log_pb = 0
         for t in range(trajectories.shape[1]):
             state = trajectories[:, t]
-            logp_f_s = self.forward_model(state)
+            logp_f_s = self.forward_model(
+                self.trainer.datamodule.preprocess_state(state)
+            )
             if t < trajectories.shape[1] - 1:
                 log_pf += (Categorical(logits=logp_f_s).log_prob(actions[:, t])) * (
                     ~dones[:, t] + 0

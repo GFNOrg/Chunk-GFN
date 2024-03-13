@@ -188,7 +188,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         )  # This tracks the length of trajetcory for each sample in the batch
 
         while not done.all():
-            p_f_s = self.forward_model(state)
+            p_f_s = self.forward_model(self.trainer.datamodule.preprocess_state(state))
             uniform_dist_probs = torch.ones_like(p_f_s).to(p_f_s)
 
             valid_actions_mask = self.trainer.datamodule.get_invalid_actions_mask(state)
@@ -281,7 +281,9 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         log_pb = 0
         for t in range(trajectories.shape[1]):
             state = trajectories[:, t]
-            logp_f_s = self.forward_model(state)
+            logp_f_s = self.forward_model(
+                self.trainer.datamodule.preprocess_state(state)
+            )
             if t < trajectories.shape[1] - 1:
                 log_pf += (Categorical(logits=logp_f_s).log_prob(actions[:, t])) * (
                     ~dones[:, t] + 0
