@@ -7,14 +7,7 @@ optimizer:
 
 scheduler: null
 
-forward_model:
-  _target_: chunkgfn.models.mlp.MLP
-  num_layers: 1
-  hidden_dim: 128
-  in_dim: 18
-  n_actions: 3
-  activation:
-    _target_: torch.nn.ReLU
+forward_model: null
   
 backward_model: null
 
