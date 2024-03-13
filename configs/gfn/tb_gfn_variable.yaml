@@ -8,20 +8,15 @@ optimizer:
 scheduler: null
 
 forward_model:
-  _target_: chunkgfn.models.rnn.UnconditionalRNN
+  _target_: chunkgfn.models.mlp.MLP
   num_layers: 1
   hidden_dim: 128
-  state_dim: 3
+  in_dim: 18
   n_actions: 3
-  act:
+  activation:
     _target_: torch.nn.ReLU
   
 backward_model: null
-
-
-
-criterion:
-  _target_: chunkgfn.rewards.mse.MSE
 
 epsilon_scheduler:
   _target_: chunkgfn.schedulers.linear_schedule.LinearSchedule
