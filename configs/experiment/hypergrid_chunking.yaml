@@ -1,0 +1,41 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+defaults:
+  - override /data: hypergrid.yaml
+  - override /gfn: tb_gfn_variable.yaml
+  - override /trainer: default.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+seed: 42
+
+data:
+  ndim: 4
+  side_length: 16
+  num_modes: 100
+  batch_size: 64
+
+trainer:
+  max_epochs: 1000
+
+gfn:
+  forward_model:
+    _target_: chunkgfn.models.mlp.MLP
+    num_layers: 1
+    hidden_dim: 128
+    in_dim: 80
+    n_actions: 5
+    activation:
+      _target_: torch.nn.ReLU
+  
+  reward_temperature: 0.3333
+  library_update_frequency: 3 # Frequency of updating the library
+  n_samples: 1000 # Number of samples to draw from the library
+
+logger:
+  wandb:
+    group: "hypergrid"
