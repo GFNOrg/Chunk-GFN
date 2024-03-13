@@ -31,6 +31,8 @@ gfn:
     n_actions: 5
     activation:
       _target_: torch.nn.ReLU
+  replay_buffer:
+    cutoff_distance: 3
   reward_temperature: 0.3333
 
 logger:
