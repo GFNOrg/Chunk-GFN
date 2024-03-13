@@ -12,6 +12,7 @@ from torchmetrics import MeanMetric, SpearmanCorrCoef
 
 from chunkgfn.gfn.utils import has_trainable_parameters
 from chunkgfn.replay_buffer.base_replay_buffer import ReplayBuffer
+from chunkgfn.replay_buffer.utils import extend_trajectories
 from chunkgfn.schedulers import Scheduler
 
 NEG_INF = -1e6  # Negative infinity
@@ -105,16 +106,16 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
     ):
         """Sample backward trajectories conditioned on inputs.
         Args:
-            final_state (torch.Tensor[batch_size, seq_length, input_dim]): Final state.
+            final_state (torch.Tensor[batch_size, *state_shape]): Final state.
         Return:
-            trajectories (torch.Tensor[batch_size, trajectory_length, seq_length, state_dim]): Trajectories for each sample in the batch.
+            trajectories (torch.Tensor[batch_size, trajectory_length, *state_shape]): Trajectories for each sample in the batch.
             actions (torch.Tensor[batch_size, trajectory_length]): Actions for each sample in the batch.
             dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
-            state (torch.Tensor[batch_size, seq_length, state_dim]): Final state.
+            state (torch.Tensor[batch_size, *state_shape]): Final state.
         """
-        bs, max_len, dim = final_state.shape
+        bs = final_state.shape[0]
         state = final_state.clone()
-        done = torch.ones((bs)).to(final_state).bool()
+        done = torch.zeros((bs)).to(final_state).bool()
 
         # Start unrolling the trajectories
         actions = []
@@ -122,7 +123,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         dones = []
         dones.append(torch.ones((bs)).to(final_state).bool())
 
-        for t in range(max_len):
+        while not done.all():
             backward_actions = self.trainer.datamodule.get_parent_actions(state)
             logp_b_s = torch.where(
                 backward_actions == 1, torch.tensor(0.0), -torch.inf
@@ -167,24 +168,26 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             epsilon (float|None): Epsilon value for epsilon greedy.
             temperature (float|None): Temperature value for tempering.
         Return:
-            trajectories (torch.Tensor[batch_size, trajectory_length, seq_length, state_dim]): Trajectories for each sample in the batch.
+            trajectories (torch.Tensor[batch_size, trajectory_length, *state_shape]): Trajectories for each sample in the batch.
             actions (torch.Tensor[batch_size, trajectory_length]): Actions for each sample in the batch.
             dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
-            state (torch.Tensor[batch_size, seq_length, state_dim]): Final state.
+            state (torch.Tensor[batch_size, *state_shape]): Final state.
             trajectory_length (torch.Tensor[batch_size]): Length of the trajectory for each sample in the batch.
         """
-        state = self.trainer.datamodule.s0.repeat(batch_size, 1, 1).to(self.device)
-        bs, max_len, dim = state.shape
+        s0 = self.trainer.datamodule.s0.to(self.device)
+        state = repeat(s0, " ... -> b ...", b=batch_size)
+        bs = state.shape[0]
 
         # Start unrolling the trajectories
         actions = []
         trajectories = []
         dones = []
+        done = torch.zeros((bs)).to(state).bool()
         trajectory_length = (
             torch.zeros((bs)).to(state).long()
         )  # This tracks the length of trajetcory for each sample in the batch
 
-        for t in range(max_len):
+        while not done.all():
             p_f_s = self.forward_model(state)
             uniform_dist_probs = torch.ones_like(p_f_s).to(p_f_s)
 
@@ -198,7 +201,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             uniform_dist_probs = torch.where(
                 valid_actions_mask,
                 uniform_dist_probs,
-                torch.tensor(0.).to(uniform_dist_probs),
+                torch.tensor(0.0).to(uniform_dist_probs),
             )
 
             if train:
@@ -241,8 +244,8 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
     def compute_loss(self, trajectories, actions, dones, logreward):
         """Compute the loss for the model.
         Args:
-            trajectories (torch.Tensor[batch_size, trajectory_length, seq_length, state_dim]): Trajectories for each sample in the batch.
-            actions (torch.Tensor[batch_size, trajectory_length, state_dim]): Actions for each sample in the batch.
+            trajectories (torch.Tensor[batch_size, trajectory_length, *state_shape]): Trajectories for each sample in the batch.
+            actions (torch.Tensor[batch_size, trajectory_length]): Actions for each sample in the batch.
             dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
             logreward (torch.Tensor[batch_size]): Log reward.
         """
@@ -254,17 +257,17 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
     ) -> torch.Tensor:
         """Get the log likelihood of the model for the given trajectories.
         Args:
-            final_state (torch.Tensor[batch_size, seq_length, state_dim]): The examples for which we're computing the log-likelihood.
+            final_state (torch.Tensor[batch_size, *state_shape]): The examples for which we're computing the log-likelihood.
             logreward (torch.Tensor[batch_size]): Log reward.
         Return:
             log_pT (torch.Tensor[batch_size]): Log likelihood.
-            trajectories (torch.Tensor[batch_size*n_trajectories, trajectory_length, seq_length, state_dim]): Trajectories for each sample in the batch.
-            actions (torch.Tensor[batch_size*n_trajectories, trajectory_length, state_dim]): Actions for each sample in the batch.
+            trajectories (torch.Tensor[batch_size*n_trajectories, trajectory_length, *state_shape]): Trajectories for each sample in the batch.
+            actions (torch.Tensor[batch_size*n_trajectories, trajectory_length]): Actions for each sample in the batch.
             dones (torch.Tensor[batch_size*n_trajectories, trajectory_length]): Whether the trajectory is done or not.
             logreward (torch.Tensor[batch_size*n_trajectories]): Log reward.
         """
         # Repeat the final_state n_trajectories times
-        bs, max_len, dim = final_state.shape
+        bs = final_state.shape[0]
         final_state = repeat(
             final_state, "b ... -> b n ...", n=self.hparams.n_trajectories
         )
@@ -321,7 +324,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         )
 
         logreward = self.trainer.datamodule.compute_logreward(final_state).to(
-            final_state
+            final_state.device
         )
         return (
             x,
@@ -344,6 +347,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         ax.set_xlabel("Actions")
         ax.set_ylabel("Frequency")
         ax.set_title("Action Frequency Histogram")
+        plt.xticks(rotation=45)
         self.logger.log_metrics({"action_histogram": wandb.Image(fig)})
         plt.close(fig)
 
@@ -386,11 +390,15 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             # Concatenate samples from the replay buffer and the on-policy samples
             indices = torch.randperm(len(x))[: batch_size - nsamples_replay]
             x = torch.cat([x[indices], samples["input"]], dim=0)
-            trajectories = torch.cat(
-                [trajectories[indices], samples["trajectories"]], dim=0
+            trajectories, actions, dones = extend_trajectories(
+                trajectories[indices],
+                samples["trajectories"],
+                actions[indices],
+                samples["actions"],
+                dones[indices],
+                samples["dones"],
             )
-            actions = torch.cat([actions[indices], samples["actions"]], dim=0)
-            dones = torch.cat([dones[indices], samples["dones"]], dim=0)
+
             final_state = torch.cat(
                 [final_state[indices], samples["final_state"]], dim=0
             )
@@ -427,21 +435,21 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             self.log(
                 "temperature", epsilon, on_step=False, on_epoch=True, prog_bar=False
             )
-
-        self.log(
-            "replay_buffer_size",
-            float(len(self.replay_buffer)),
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
-        self.log(
-            "replay_buffer_mean_logreward",
-            self.replay_buffer.storage["logreward"].mean(),
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
+        if self.replay_buffer is not None:
+            self.log(
+                "replay_buffer_size",
+                float(len(self.replay_buffer)),
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+            )
+            self.log(
+                "replay_buffer_mean_logreward",
+                self.replay_buffer.storage["logreward"].mean(),
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+            )
         self.log(
             "train/trajectory_length",
             self.train_trajectory_length,
