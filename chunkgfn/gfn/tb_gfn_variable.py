@@ -40,7 +40,7 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
     def compute_loss(self, trajectories, actions, dones, logreward):
         """Compute the loss for the model.
         Args:
-            trajectories (torch.Tensor[batch_size, trajectory_length, seq_length, state_dim]): Trajectories for each sample in the batch.
+            trajectories (torch.Tensor[batch_size, trajectory_length, *state_shape]): Trajectories for each sample in the batch.
             actions (torch.Tensor[batch_size, trajectory_length]): Actions for each sample in the batch.
             dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
             logreward (torch.Tensor[batch_size]): Log reward.
@@ -93,7 +93,7 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
         # Pick a number of generated samples from the replay buffer
         samples = self.replay_buffer.sample(self.hparams.n_samples)
         # Get the most valuable token
-        self.trainer.datamodule.chunk(samples["final_state"])
+        self.trainer.datamodule.chunk(samples["actions"], samples["dones"])
 
         # Update model's weights
         def init_weights(m):
