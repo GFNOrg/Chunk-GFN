@@ -34,6 +34,7 @@ gfn:
   replay_buffer:
     cutoff_distance: 3
   reward_temperature: 0.3333
+  n_trajectories: 30
 
 logger:
   wandb:
