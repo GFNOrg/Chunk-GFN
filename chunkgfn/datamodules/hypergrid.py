@@ -5,6 +5,7 @@ from tokenizers.models import BPE
 from tokenizers.pre_tokenizers import Whitespace
 from tokenizers.trainers import BpeTrainer
 
+from ..constants import EPS
 from .base_module import BaseUnconditionalEnvironmentModule
 
 ALPHABET = [
@@ -38,7 +39,7 @@ ALPHABET = [
 
 
 def _safe_log(x):
-    return torch.log(x + 1e-8)
+    return torch.log(x + EPS)
 
 
 class HyperGridDataset(torch.utils.data.Dataset):

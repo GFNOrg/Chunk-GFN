@@ -15,8 +15,7 @@ from chunkgfn.replay_buffer.base_replay_buffer import ReplayBuffer
 from chunkgfn.replay_buffer.utils import extend_trajectories
 from chunkgfn.schedulers import Scheduler
 
-NEG_INF = -1e6  # Negative infinity
-SMALL_VALUE = 1e-6  # Small value to avoid division by zero
+from ..constants import EPS, NEGATIVE_INFINITY
 
 
 class UnConditionalSequenceGFN(ABC, LightningModule):
@@ -196,7 +195,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             p_f_s = torch.where(
                 valid_actions_mask,
                 p_f_s,
-                torch.tensor(NEG_INF).to(p_f_s),
+                torch.tensor(NEGATIVE_INFINITY).to(p_f_s),
             )
             uniform_dist_probs = torch.where(
                 valid_actions_mask,
@@ -206,7 +205,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
 
             if train:
                 if temperature is not None:
-                    logits = p_f_s / (SMALL_VALUE + temperature)
+                    logits = p_f_s / (EPS + temperature)
                 else:
                     logits = p_f_s
                 if epsilon is not None:
