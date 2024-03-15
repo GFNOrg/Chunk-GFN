@@ -110,14 +110,14 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
                 )[[self.atomic_tokens.index(x) for x in action]]
         return one_hot_action_tensor
 
-    def preprocess_state(self, state: torch.Tensor) -> torch.Tensor:
-        """Preprocess the state so that it can be input to the policy model.
+    def preprocess_states(self, states: torch.Tensor) -> torch.Tensor:
+        """Preprocess states so that it can be input to the policy model.
         Args:
-            state (torch.Tensor[batch_size, max_len, dim]): The state.
+            states (torch.Tensor[batch_size, max_len, dim]): The states.
         Returns:
-            processed_state (torch.Tensor[batch_size, max_len, dim]): The preprocessed state.
+            processed_states (torch.Tensor[batch_size, max_len, dim]): The preprocessed states.
         """
-        return state
+        return states
 
     def create_modes(self):
         """Create the modes for the bit-sequence task."""
@@ -146,11 +146,11 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         self.len_modes = torch.tensor([len(m) for m in self.modes])
 
     def is_initial_state(self, states: torch.Tensor) -> torch.Tensor:
-        """Check if the state is the initial state.
+        """Check if the states are the initial state.
         Args:
             states (torch.Tensor[batch_size, max_len, dim]): Batch of states.
         Returns:
-            is_initial (torch.Tensor[batch_size]): Whether the state is the initial state or not.
+            is_initial (torch.Tensor[batch_size]): Whether the states are the initial state or not.
         """
         is_initial = (states == self.s0.to(states.device)).all(dim=-1).all(dim=-1)
         return is_initial
@@ -174,9 +174,9 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         return strings
 
     def compute_logreward(self, states: torch.Tensor) -> torch.Tensor:
-        """Compute the reward for the given state and action.
+        """Compute the reward for the given states and action.
         Args:
-            state (torch.Tensor[batch_size, max_len, dim]): Batch of states.
+            states (torch.Tensor[batch_size, max_len, dim]): Batch of states.
         Returns:
             reward (torch.Tensor[batch_size]): Batch of rewards.
         """
@@ -202,9 +202,9 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
         return reward
 
     def compute_metrics(self, states: torch.Tensor) -> dict[str, torch.Tensor]:
-        """Compute metrics for the given state.
+        """Compute metrics for the given states.
         Args:
-            state (torch.Tensor[batch_size, max_len, dim]): Batch of states.
+            states (torch.Tensor[batch_size, max_len, dim]): Batch of states.
         Returns:
             metrics (dict[str, torch.Tensor]): Dictionary of metrics.
         """
@@ -227,46 +227,46 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
 
         return metrics
 
-    def forward_step(self, state: torch.Tensor, forward_action: torch.Tensor):
-        """Change the state after you apply the forward action.
+    def forward_step(self, states: torch.Tensor, forward_action: torch.Tensor):
+        """Change the states after you apply the forward action.
         Args:
-            state (torch.Tensor[batch_size, max_len, dim]): Batch of states.
+            states (torch.Tensor[batch_size, max_len, dim]): Batch of states.
             forward_action (torch.Tensor[batch_size]): Batch of forward actions. Each element corresponds to the index of the action.
         Returns:
-            new_state (torch.Tensor[batch_size, max_len, dim]): Batch of new states.
+            new_states (torch.Tensor[batch_size, max_len, dim]): Batch of new states.
             done (torch.Tensor[batch_size]): Whether the trajectory is done or not.
         """
-        bs, max_len, dim = state.shape
-        eos_token = self.eos_token.to(state)
-        padding_token = self.padding_token.to(state)
-        one_hot_action_tensor = self.one_hot_action_tensor.to(state.device)
+        bs, max_len, dim = states.shape
+        eos_token = self.eos_token.to(states)
+        padding_token = self.padding_token.to(states)
+        one_hot_action_tensor = self.one_hot_action_tensor.to(states.device)
         max_action_len = one_hot_action_tensor.shape[1]
         # Update the state by filling the current timestep with the sampled action only if it doesn't contain EOS token
-        new_state = torch.cat(
+        new_states = torch.cat(
             [
-                state.clone(),
+                states.clone(),
                 padding_token.unsqueeze(0).unsqueeze(1).repeat(bs, max_action_len, 1),
             ],
             dim=1,
         )
         start_indices = torch.argmax(
-            ((state == padding_token).all(dim=-1) + 0), dim=-1
+            ((states == padding_token).all(dim=-1) + 0), dim=-1
         )  # Where to start inserting action
         index = start_indices.unsqueeze(1) + torch.arange(max_action_len).unsqueeze(
             0
-        ).to(state.device)
-        done = torch.where((state == eos_token).all(dim=-1).any(dim=-1), True, False)
-        new_state = torch.where(
+        ).to(states.device)
+        done = torch.where((states == eos_token).all(dim=-1).any(dim=-1), True, False)
+        new_states = torch.where(
             done.unsqueeze(1).unsqueeze(2),
-            new_state,
+            new_states,
             torch.scatter(
-                new_state,
+                new_states,
                 1,
                 index.unsqueeze(2).repeat(1, 1, dim),
                 one_hot_action_tensor[forward_action],
             ),
         )
-        new_state = new_state[:, :max_len, :]
+        new_states = new_states[:, :max_len, :]
 
         used_actions = forward_action[
             ~done
@@ -275,36 +275,36 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
             used_actions.to(self.action_frequency.device), minlength=len(self.actions)
         )
 
-        return new_state, done
+        return new_states, done
 
-    def backward_step(self, state: torch.Tensor, backward_action: torch.Tensor):
-        """Change the state after you apply the backward action.
+    def backward_step(self, states: torch.Tensor, backward_action: torch.Tensor):
+        """Change the states after you apply the backward action.
         Args:
-            state (torch.Tensor[batch_size, max_len, dim]): Batch of states.
+            states (torch.Tensor[batch_size, max_len, dim]): Batch of states.
             backward_action (torch.Tensor[batch_size]): Batch of backward actions. Each element corresponds to the index of the action.
         Returns:
-            new_state (torch.Tensor[batch_size, max_len, dim]): Batch of new states.
+            new_states (torch.Tensor[batch_size, max_len, dim]): Batch of new states.
         """
-        bs, max_len, dim = state.shape
-        new_state = state.clone()
-        action_len = self.action_len.to(state.device)
+        bs, max_len, dim = states.shape
+        new_states = states.clone()
+        action_len = self.action_len.to(states.device)
 
-        where_padding = (state == self.padding_token.to(state)).all(dim=-1)
+        where_padding = (states == self.padding_token.to(states)).all(dim=-1)
 
         start_indices = torch.where(
             where_padding.any(dim=-1), torch.argmax(where_padding + 0, dim=-1), max_len
         )
         done = start_indices == 0
-        mask = torch.arange(max_len).unsqueeze(0).to(state.device) >= (
+        mask = torch.arange(max_len).unsqueeze(0).to(states.device) >= (
             start_indices - action_len[backward_action]
         ).unsqueeze(1)
-        mask &= torch.arange(max_len).unsqueeze(0).to(state.device) < (
+        mask &= torch.arange(max_len).unsqueeze(0).to(states.device) < (
             start_indices
         ).unsqueeze(1)
         mask &= (~done).unsqueeze(-1)
-        new_state[mask] = self.padding_token.to(state.device)
+        new_states[mask] = self.padding_token.to(states.device)
 
-        return new_state, done
+        return new_states, done
 
     def get_invalid_actions_mask(self, states: torch.Tensor):
         """Get the invalid actions mask for a batch of states.

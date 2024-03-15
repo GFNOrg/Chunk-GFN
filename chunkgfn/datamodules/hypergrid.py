@@ -149,16 +149,16 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
                 acting_tensor[i, -1] = 1  # The "exit" bit is on.
         return acting_tensor
 
-    def preprocess_state(self, state: torch.Tensor) -> torch.Tensor:
-        """Preprocess the state so that it can be input to the policy model.
+    def preprocess_state(self, states: torch.Tensor) -> torch.Tensor:
+        """Preprocess the states so that it can be input to the policy model.
         Args:
-            state (torch.Tensor[batch_size, ndim+1]): The state.
+            states (torch.Tensor[batch_size, ndim+1]): The states.
         Returns:
-            processed_state (torch.Tensor[batch_size, (ndim+1)*side_length]): The preprocessed state.
+            processed_states (torch.Tensor[batch_size, (ndim+1)*side_length]): The preprocessed states.
         """
-        bs, dim = state.shape
-        processed_state = torch.zeros(bs, dim, self.side_length).to(state.device)
-        processed_state = torch.scatter(processed_state, 2, state.unsqueeze(-1), 1)
+        bs, dim = states.shape
+        processed_state = torch.zeros(bs, dim, self.side_length).to(states.device)
+        processed_state = torch.scatter(processed_state, 2, states.unsqueeze(-1), 1)
         processed_state = rearrange(processed_state, "b d h -> b (d h)")
         return processed_state
 
@@ -233,21 +233,21 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         }
         return metrics
 
-    def forward_step(self, state: torch.Tensor, forward_action: torch.Tensor):
-        """Change the state after you apply the forward action only if
+    def forward_step(self, states: torch.Tensor, forward_action: torch.Tensor):
+        """Change the states after you apply the forward action only if
         it's not a terminal state.
         Args:
-            state (torch.Tensor[batch_size, ndim+1]): Batch of states.
+            states (torch.Tensor[batch_size, ndim+1]): Batch of states.
             forward_action (torch.Tensor[batch_size]): Batch of forward actions.
                 Each element corresponds to the index of the action.
         Returns:
-            new_state (torch.Tensor[batch_size, ndim+1]): Batch of new states.
+            new_states (torch.Tensor[batch_size, ndim+1]): Batch of new states.
             done (torch.Tensor[batch_size]): Whether state (and not new_state) is done or not.
         """
-        done = self.is_terminal_state(state)
-        acting_tensor = self.acting_tensor.to(state.device)
-        new_state = state.clone()
-        new_state[~done] += acting_tensor[forward_action[~done]]
+        done = self.is_terminal_state(states)
+        acting_tensor = self.acting_tensor.to(states.device)
+        new_states = states.clone()
+        new_states[~done] += acting_tensor[forward_action[~done]]
 
         used_actions = forward_action[
             ~done
@@ -256,24 +256,24 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
             used_actions.to(self.action_frequency.device), minlength=len(self.actions)
         )
 
-        return new_state, done
+        return new_states, done
 
-    def backward_step(self, state: torch.Tensor, backward_action: torch.Tensor):
+    def backward_step(self, states: torch.Tensor, backward_action: torch.Tensor):
         """Change the state after you apply the backward action only we're not
         at the initial state.
         Args:
-            state (torch.Tensor[batch_size, ndim+1]): Batch of states.
+            states (torch.Tensor[batch_size, ndim+1]): Batch of states.
             backward_action (torch.Tensor[batch_size]): Batch of backward actions.
                 Each element corresponds to the index of the action.
         Returns:
-            new_state (torch.Tensor[batch_size, ndim+1]): Batch of new states.
+            new_states (torch.Tensor[batch_size, ndim+1]): Batch of new states.
             done (torch.Tensor[batch_size]): Whether state (and not new_state) is done or not.
         """
-        done = self.is_initial_state(state)
-        acting_tensor = self.acting_tensor.to(state.device)
-        new_state = state.clone()
-        new_state[~done] -= acting_tensor[backward_action[~done]]
-        return new_state, done
+        done = self.is_initial_state(states)
+        acting_tensor = self.acting_tensor.to(states.device)
+        new_states = states.clone()
+        new_states[~done] -= acting_tensor[backward_action[~done]]
+        return new_states, done
 
     def get_invalid_actions_mask(self, states: torch.Tensor):
         """Get the invalid actions mask for a batch of states.
