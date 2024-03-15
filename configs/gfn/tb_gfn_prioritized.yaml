@@ -7,14 +7,7 @@ optimizer:
 
 scheduler: null
 
-forward_model:
-  _target_: chunkgfn.models.rnn.UnconditionalRNN
-  num_layers: 1
-  hidden_dim: 128
-  state_dim: 3
-  n_actions: 3
-  act:
-    _target_: torch.nn.ReLU
+forward_model: null
   
 backward_model: null
 
@@ -27,7 +20,7 @@ epsilon_scheduler:
 replay_buffer:
   _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
   capacity: 2500
-  cutoff_distance: 5
+  cutoff_distance: 1.4
   is_conditional: False
 
 forward_lr: 1e-4

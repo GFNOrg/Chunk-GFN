@@ -35,6 +35,16 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         self.persistent_workers = persistent_workers
 
     @abstractmethod
+    def preprocess_state(self, state: torch.Tensor) -> torch.Tensor:
+        """Preprocess the state so that it can be input to the policy model.
+        Args:
+            state (torch.Tensor[batch_size, *state_shape]): The state.
+        Returns:
+            processed_state (torch.Tensor[batch_size, *processed_state_shape]): The preprocessed state.
+        """
+        NotImplementedError
+
+    @abstractmethod
     def setup(self, stage: Optional[str] = None) -> None:
         """Load data. Set variables: `self.data_train`, `self.data_val`, `self.data_test`.
 
@@ -142,10 +152,11 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         NotImplementedError
 
     @abstractmethod
-    def chunk(self, final_states: torch.Tensor):
-        """Find the most valuable token from the corpus.
+    def chunk(self, actions: torch.Tensor, dones: torch.Tensor):
+        """Find the most valuable subsequence of actions from the corpus.
         Args:
-            final_states (torch.Tensor[batch_size, max_len, state_vocab_dim]): Batch of final states.
+            actions (torch.Tensor[batch_size, traj_length]): Batch of sequence of actions.
+            dones (torch.Tensor[batch_size, traj_length]): Batch of sequence of terminations.
         """
         NotImplementedError
 

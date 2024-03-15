@@ -1,6 +1,7 @@
 import torch
 
 from .base_replay_buffer import ReplayBuffer
+from .utils import extend_trajectories
 
 
 def distance(src: torch.Tensor, dst: torch.Tensor):
@@ -36,7 +37,7 @@ class PrioritizedReplay(ReplayBuffer):
         Args:
             input (torch.Tensor[n_samples, max_len, input_dim]): Input to the model.
             trajectories (torch.Tensor[n_samples, traj_len, max_len, state_dim]): Trajectories.
-            actions (torch.Tensor[n_samples, traj_len, action_dim]): Actions.
+            actions (torch.Tensor[n_samples, traj_len]): Actions.
             dones (torch.Tensor[n_samples, traj_len]): Whether trajectory is over.
             final_state (torch.Tensor[n_samples, max_len, state_dim]): Final state.
             logreward (torch.Tensor[n_samples]): Log reward.
@@ -70,14 +71,18 @@ class PrioritizedReplay(ReplayBuffer):
 
         # Adding a batch and the buffer isn't full yet.
         elif len(self) < self.capacity:
+            new_trajectories, new_actions, new_dones = extend_trajectories(
+                self.storage["trajectories"],
+                trajectories,
+                self.storage["actions"],
+                actions,
+                self.storage["dones"],
+                dones,
+            )
             self.storage["input"] = torch.cat([self.storage["input"], input], dim=0)
-            self.storage["trajectories"] = torch.cat(
-                [self.storage["trajectories"], trajectories], dim=0
-            )
-            self.storage["actions"] = torch.cat(
-                [self.storage["actions"], actions], dim=0
-            )
-            self.storage["dones"] = torch.cat([self.storage["dones"], dones], dim=0)
+            self.storage["trajectories"] = new_trajectories
+            self.storage["actions"] = new_actions
+            self.storage["dones"] = new_dones
             self.storage["final_state"] = torch.cat(
                 [self.storage["final_state"], final_state], dim=0
             )
@@ -129,8 +134,8 @@ class PrioritizedReplay(ReplayBuffer):
                         dim=-1,
                     )
                 else:
-                    batch = dict_curr_batch["final_state"]
-                    buffer = self.storage["final_state"]
+                    batch = dict_curr_batch["final_state"].float()
+                    buffer = self.storage["final_state"].float()
 
                 # Filter the batch for diverse final_states with high reward.
                 batch_batch_dist = torch.cdist(
@@ -162,9 +167,21 @@ class PrioritizedReplay(ReplayBuffer):
 
             # Concatenate everything, sort, and remove leftovers.
             for k, v in self.storage.items():
-                self.storage[k] = torch.cat(
-                    (self.storage[k], dict_curr_batch[k]), dim=0
-                )
+                if k not in ["trajectories", "actions", "dones"]:
+                    self.storage[k] = torch.cat(
+                        (self.storage[k], dict_curr_batch[k]), dim=0
+                    )
+            new_trajectories, new_actions, new_dones = extend_trajectories(
+                self.storage["trajectories"],
+                dict_curr_batch["trajectories"],
+                self.storage["actions"],
+                dict_curr_batch["actions"],
+                self.storage["dones"],
+                dict_curr_batch["dones"],
+            )
+            self.storage["trajectories"] = new_trajectories
+            self.storage["actions"] = new_actions
+            self.storage["dones"] = new_dones
 
             idx_sorted = torch.argsort(self.storage["logreward"], descending=False)
             _apply_idx(idx_sorted, self.storage)

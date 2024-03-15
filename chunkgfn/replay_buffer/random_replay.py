@@ -1,6 +1,7 @@
 import torch
 
 from .base_replay_buffer import ReplayBuffer
+from .utils import extend_trajectories
 
 
 class RandomReplay(ReplayBuffer):
@@ -18,7 +19,7 @@ class RandomReplay(ReplayBuffer):
         Args:
             input (torch.Tensor[n_samples, max_len, input_dim]): Input to the model.
             trajectories (torch.Tensor[n_samples, traj_len, max_len, state_dim]): Trajectories.
-            actions (torch.Tensor[n_samples, traj_len, action_dim]): Actions.
+            actions (torch.Tensor[n_samples, traj_len]): Actions.
             dones (torch.Tensor[n_samples, traj_len]): Whether trajectory is over.
             final_state (torch.Tensor[n_samples, max_len, state_dim]): Final state.
             logreward (torch.Tensor[n_samples]): Log reward.
@@ -44,14 +45,19 @@ class RandomReplay(ReplayBuffer):
                 "logreward": logreward,
             }
         else:
+            new_trajetcories, new_actions, new_dones = extend_trajectories(
+                self.storage["trajectories"],
+                trajectories,
+                self.storage["actions"],
+                actions,
+                self.storage["dones"],
+                dones,
+            )
             self.storage["input"] = torch.cat([self.storage["input"], input], dim=0)
-            self.storage["trajectories"] = torch.cat(
-                [self.storage["trajectories"], trajectories], dim=0
-            )
-            self.storage["actions"] = torch.cat(
-                [self.storage["actions"], actions], dim=0
-            )
-            self.storage["dones"] = torch.cat([self.storage["dones"], dones], dim=0)
+
+            self.storage["actions"] = new_actions
+            self.storage["trajectories"] = new_trajetcories
+            self.storage["dones"] = new_dones
             self.storage["final_state"] = torch.cat(
                 [self.storage["final_state"], final_state], dim=0
             )
