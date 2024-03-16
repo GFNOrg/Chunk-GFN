@@ -14,7 +14,7 @@ defaults:
 seed: 42
 
 data:
-  ndim: 4
+  ndim: 6
   side_length: 16
   num_modes: 100
   batch_size: 64
@@ -27,12 +27,15 @@ gfn:
     _target_: chunkgfn.models.mlp.MLP
     num_layers: 1
     hidden_dim: 128
-    in_dim: 80
-    n_actions: 5
+    in_dim: 112
+    n_actions: 7
     activation:
       _target_: torch.nn.ReLU
   reward_temperature: 0.3333
   n_trajectories: 30
+
+  replay_buffer:
+    capacity: 10000
 
 logger:
   wandb:

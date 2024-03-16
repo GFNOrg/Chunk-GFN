@@ -339,7 +339,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
 
     def log_action_histogram(self):
         """Log the action histogram."""
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(10, 5))
         freq = (
             self.trainer.datamodule.action_frequency
             / self.trainer.datamodule.action_frequency.sum()
@@ -348,7 +348,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         ax.set_xlabel("Actions")
         ax.set_ylabel("Frequency")
         ax.set_title("Action Frequency Histogram")
-        plt.xticks(rotation=45)
+        plt.xticks(rotation=90)
         self.logger.log_metrics({"action_histogram": wandb.Image(fig)})
         plt.close(fig)
 

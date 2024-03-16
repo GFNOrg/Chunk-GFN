@@ -11,4 +11,4 @@ module load libffi
 module load OpenSSL/1.1
 source $VENV/ai_scientist/bin/activate
 
-python main.py experiment=hypergrid_chunking data.R0=0.1 logger.wandb.name="lib-R0-0.1"
+python main.py experiment=hypergrid_chunking_prioritized data.R0=0.1 logger.wandb.name="lib-R0-0.1"
