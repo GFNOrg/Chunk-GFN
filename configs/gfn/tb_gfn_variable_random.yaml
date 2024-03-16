@@ -1,0 +1,33 @@
+_target_: chunkgfn.gfn.tb_gfn_variable.TBGFN_Variable
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  weight_decay: 0.0
+
+scheduler: null
+
+forward_model: null
+  
+backward_model: null
+
+epsilon_scheduler:
+  _target_: chunkgfn.schedulers.linear_schedule.LinearSchedule
+  initial_value: 0.5
+  final_value: 0.1
+  max_epochs: ${trainer.max_epochs}
+
+replay_buffer:
+  _target_: chunkgfn.replay_buffer.random_replay.RandomReplay
+  capacity: 2500
+  is_conditional: False
+
+
+forward_lr: 1e-4
+partition_lr: 1e-3
+monitor: val/logreward
+ratio_from_replay_buffer: 0.55 # Ratio of samples from replay buffer
+n_trajectories: 1 # Number of test trajectories to sample
+reward_temperature: 1.0 # Temperature for the reward
+library_update_frequency: 10 # Frequency of updating the library
+n_samples: 1000 # Number of samples to draw from the library
