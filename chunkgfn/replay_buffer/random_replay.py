@@ -5,6 +5,17 @@ from .utils import extend_trajectories
 
 
 class RandomReplay(ReplayBuffer):
+    def __init__(
+        self,
+        reward_sampling: bool = False,
+        capacity: int = 1000,
+        is_conditional: bool = True,
+    ):
+        super().__init__(capacity, is_conditional)
+        self.reward_sampling = (
+            reward_sampling  # Whether to sample according to the reward
+        )
+
     def add(
         self,
         input: torch.Tensor,
@@ -69,7 +80,18 @@ class RandomReplay(ReplayBuffer):
                 self.storage[key] = self.storage[key][-self.capacity :]
 
     def sample(self, num_samples: int):
-        indices = torch.randperm(len(self))[:num_samples]
+        """Sample from the replay buffer randomly or according to the logreward
+        and without replacement.
+        Args:
+            num_samples (int): Number of samples to draw.
+        Returns:
+            dict: Dictionary containing the samples.
+        """
+        if self.reward_sampling:
+            probs = torch.softmax(self.storage["logreward"], dim=-1)
+            indices = torch.multinomial(probs, num_samples, replacement=False)
+        else:
+            indices = torch.randperm(len(self))[:num_samples]
         samples = {}
         for key in self.storage.keys():
             samples[key] = self.storage[key][indices]
