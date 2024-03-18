@@ -35,6 +35,14 @@ gfn:
     n_actions: 3
     act:
       _target_: torch.nn.ReLU
+  backward_model:
+    _target_: chunkgfn.models.rnn.UnconditionalRNN
+    num_layers: 1
+    hidden_dim: 128
+    state_dim: 3
+    n_actions: 3
+    act:
+      _target_: torch.nn.ReLU
   
   replay_buffer:
     cutoff_distance: 6

@@ -35,7 +35,7 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         self.persistent_workers = persistent_workers
 
     @abstractmethod
-    def preprocess_state(self, state: torch.Tensor) -> torch.Tensor:
+    def preprocess_states(self, states: torch.Tensor) -> torch.Tensor:
         """Preprocess the state so that it can be input to the policy model.
         Args:
             state (torch.Tensor[batch_size, *state_shape]): The state.

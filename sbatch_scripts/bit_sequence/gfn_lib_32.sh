@@ -9,6 +9,6 @@
 module --quiet load python/3.10
 module load libffi
 module load OpenSSL/1.1
-source $VENV/ai_scientist/bin/activate
+source $HOME/chunk/bin/activate
 
 python main.py seed=42 experiment=bit_sequence_chunking data.max_len=32 gfn.replay_buffer.cutoff_distance=6 logger.wandb.name="lib-len-32"

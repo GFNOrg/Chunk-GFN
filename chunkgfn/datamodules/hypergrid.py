@@ -149,7 +149,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
                 acting_tensor[i, -1] = 1  # The "exit" bit is on.
         return acting_tensor
 
-    def preprocess_state(self, states: torch.Tensor) -> torch.Tensor:
+    def preprocess_states(self, states: torch.Tensor) -> torch.Tensor:
         """Preprocess the states so that it can be input to the policy model.
         Args:
             states (torch.Tensor[batch_size, ndim+1]): The states.

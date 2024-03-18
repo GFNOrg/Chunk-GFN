@@ -124,8 +124,11 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
 
         while not done.all():
             backward_actions = self.trainer.datamodule.get_parent_actions(state)
+            logp_b_s = self.backward_model(
+                self.trainer.datamodule.preprocess_states(state)
+            )
             logp_b_s = torch.where(
-                backward_actions == 1, torch.tensor(0.0), -torch.inf
+                backward_actions == 1, logp_b_s, -torch.inf
             ).to(state)
             # When no action is available, just fill with uniform because it won't be picked anyway in the backward_step. Doing this avoids having nan when computing probabilities
             logp_b_s = torch.where(
@@ -187,7 +190,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         )  # This tracks the length of trajetcory for each sample in the batch
 
         while not done.all():
-            p_f_s = self.forward_model(self.trainer.datamodule.preprocess_state(state))
+            p_f_s = self.forward_model(self.trainer.datamodule.preprocess_states(state))
             uniform_dist_probs = torch.ones_like(p_f_s).to(p_f_s)
 
             valid_actions_mask = self.trainer.datamodule.get_invalid_actions_mask(state)
@@ -281,7 +284,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         for t in range(trajectories.shape[1]):
             state = trajectories[:, t]
             logp_f_s = self.forward_model(
-                self.trainer.datamodule.preprocess_state(state)
+                self.trainer.datamodule.preprocess_states(state)
             )
             if t < trajectories.shape[1] - 1:
                 log_pf += (Categorical(logits=logp_f_s).log_prob(actions[:, t])) * (
@@ -289,8 +292,11 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
                 )
             if t > 0:
                 backward_actions = self.trainer.datamodule.get_parent_actions(state)
+                logp_b_s = self.backward_model(
+                    self.trainer.datamodule.preprocess_states(state)
+                )
                 logp_b_s = torch.where(
-                    backward_actions == 1, torch.tensor(0.0), -torch.inf
+                    backward_actions == 1, logp_b_s, -torch.inf
                 ).to(logp_f_s)
                 # When no action is available, just fill with uniform because it won't be picked anyway in the backward_step. Doing this avoids having nan when computing probabilities
                 logp_b_s = torch.where(
