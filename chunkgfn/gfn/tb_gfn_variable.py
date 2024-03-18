@@ -110,7 +110,11 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
             new_out_dim=self.forward_model.logits_layer.out_features + 1,
             init_weights=init_weights,
         )
-
+        self.backward_model.logits_layer = expand_linear_layer(
+            self.backward_model.logits_layer,
+            new_out_dim=self.backward_model.logits_layer.out_features + 1,
+            init_weights=init_weights,
+        )
         # Reinitialize the optimizer
         self.trainer.optimizers = [self.configure_optimizers()["optimizer"]]
 
