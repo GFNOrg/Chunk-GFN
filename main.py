@@ -1,7 +1,8 @@
-from random import randint
-from typing import Any, Dict, List, Optional, Tuple
 import datetime
 import os
+from pathlib import Path
+from random import randint
+from typing import Any, Dict, List, Optional, Tuple
 
 import hydra
 import lightning as L
@@ -88,7 +89,14 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     if cfg.get("train"):
         log.info("Starting training!")
-        trainer.fit(model=gfn, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
+        ckpt_path = cfg.get("ckpt_path")
+        if ckpt_path is None and cfg.resume is True:
+            ckpt_path_ = Path(cfg.paths.output_dir) / "checkpoints" / "last.ckpt"
+            if ckpt_path_.exists():
+                ckpt_path = ckpt_path_
+                print("resuming from", ckpt_path)
+        trainer.fit(model=gfn, datamodule=datamodule, ckpt_path=ckpt_path)
+        log.info(f"Best model ckpt at {trainer.checkpoint_callback.best_model_path}")
 
     train_metrics = trainer.callback_metrics
 
@@ -133,10 +141,9 @@ def main(cfg: DictConfig) -> Optional[float]:
 
 
 if __name__ == "__main__":
-
     if "SLURM_JOB_ID" not in os.environ:
         # Random 8 digit faux job id.
-        job_id = ''.join(["{}".format(randint(0, 9)) for num in range(0, 8)])
+        job_id = "".join(["{}".format(randint(0, 9)) for num in range(0, 8)])
         os.environ["SLURM_JOB_ID"] = "chunkgfn_test_{}".format(job_id)
 
     if "SLURM_JOB_NAME" not in os.environ:
