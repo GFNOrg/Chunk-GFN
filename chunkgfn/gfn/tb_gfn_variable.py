@@ -98,14 +98,10 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
         self.trainer.datamodule.chunk(samples["actions"], samples["dones"])
 
         # Update model's weights
-        def init_weights(m):
-            m.bias.data.fill_(0.0)
-            m.weight.data.fill_(0.0)
-
         self.forward_model.logits_layer = expand_linear_layer(
             self.forward_model.logits_layer,
             new_out_dim=self.forward_model.logits_layer.out_features + 1,
-            init_weights=None,
+            init_weights=self.hparams.weight_initialization,
         )
 
         # Reinitialize the optimizer

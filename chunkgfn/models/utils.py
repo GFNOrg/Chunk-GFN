@@ -8,8 +8,12 @@ def expand_linear_layer(
     layer: nn.Module,
     new_in_dim: int | None = None,
     new_out_dim: int | None = None,
-    init_weights: Callable | None = None,
+    init_weights: str = "average",
 ):
+    assert init_weights in [
+        "zero",
+        "average",
+    ], "init_weights must be one of 'zero', 'average'"
     old_out_dim, old_in_dim = layer.weight.shape
     if new_in_dim is not None:
         assert (
@@ -30,8 +34,13 @@ def expand_linear_layer(
     with torch.no_grad():
         new_layer.weight[:old_out_dim, :old_in_dim] = layer.weight
         new_layer.bias[:old_out_dim] = layer.bias
-        if init_weights is not None:
-            init_weights(new_layer)
+
+        if init_weights == "zero":
+            new_layer.bias[old_out_dim:] = 0
+            new_layer.weight[old_out_dim:, :old_in_dim] = 0
+        elif init_weights == "average":
+            new_layer.bias[old_out_dim:] = layer.bias.mean()
+            new_layer.weight[old_out_dim:, :old_in_dim] = layer.weight.mean(0)
 
     return new_layer
 
