@@ -197,15 +197,22 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         if len(states.shape) == self.ndim + 1:
             states = states[:, :-1]  # If the state contains the "exit" bit, remove it.
 
-        normalized_coords = (states / (self.side_length - 1) - 0.5).abs()
+        # This is safer since floating point errors can occur.
+        normalized_coords = (20 * states - 10 * (self.side_length - 1)).abs()
         reward = (
             self.R0
             + self.R1
             * torch.prod(
-                (normalized_coords > 0.25) & (normalized_coords <= 0.5), dim=-1
+                (normalized_coords > 5 * (self.side_length - 1))
+                & (normalized_coords <= 10 * (self.side_length - 1)),
+                dim=-1,
             )
             + self.R2
-            * torch.prod((normalized_coords > 0.3) & (normalized_coords <= 0.4), dim=-1)
+            * torch.prod(
+                (normalized_coords > 6 * (self.side_length - 1))
+                & (normalized_coords <= 8 * (self.side_length - 1)),
+                dim=-1,
+            )
         )
         log_reward = _safe_log(reward)
 
@@ -220,9 +227,12 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         """
         metrics = {}
         states = states[:, :-1]  # The state contains the "exit" bit, remove it.
-        normalized_coords = (states / (self.side_length - 1) - 0.5).abs()
-        modes = torch.prod(
-            (normalized_coords > 0.3) & (normalized_coords <= 0.4), dim=-1
+        # This is safer since floating point errors can occur.
+        normalized_coords = (10 * states - 5 * (self.side_length - 1)).abs()
+        modes = torch.all(
+            (normalized_coords > 3 * (self.side_length - 1))
+            & (normalized_coords <= 4 * (self.side_length - 1)),
+            dim=-1,
         )
         modes_found = set([tuple(s.tolist()) for s in states[modes.bool()]])
         self.discovered_modes.update(modes_found)
