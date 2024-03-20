@@ -5,7 +5,7 @@
 
 defaults:
   - override /data: bit_sequence.yaml
-  - override /gfn: tb_gfn_variable.yaml
+  - override /gfn: tb_gfn_variable_prioritized.yaml
   - override /trainer: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
@@ -23,7 +23,7 @@ data:
   batch_size: 64
 
 trainer:
-  max_epochs: 1000
+  max_epochs: 1500
   check_val_every_n_epoch: 20
 
 gfn:
@@ -38,6 +38,7 @@ gfn:
   
   replay_buffer:
     cutoff_distance: 6
+    capacity: 10000
   
   reward_temperature: 0.3333
   library_update_frequency: 75 # Frequency of updating the library

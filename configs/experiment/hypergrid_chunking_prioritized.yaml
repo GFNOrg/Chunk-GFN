@@ -20,7 +20,7 @@ data:
   batch_size: 64
 
 trainer:
-  max_epochs: 1000
+  max_epochs: 1500
   check_val_every_n_epoch: 1
 
 gfn:

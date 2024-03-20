@@ -4,7 +4,7 @@
 # python train.py experiment=example
 
 defaults:
-  - override /data: hypergrid.yaml
+  - override /data: bit_sequence.yaml
   - override /gfn: tb_gfn_variable_random.yaml
   - override /trainer: default.yaml
 
@@ -14,28 +14,30 @@ defaults:
 seed: 42
 
 data:
-  ndim: 6
-  side_length: 16
-  num_modes: 100
+  max_len: 32
+  num_modes: 60
+  num_train_iterations: 100
+  oracle_difficulty: medium
+  sample_exact_length: True # Whether to always sample sequences of length `max_len` or not
+  threshold: 0.9
   batch_size: 64
 
 trainer:
   max_epochs: 1500
-  check_val_every_n_epoch: 1
+  check_val_every_n_epoch: 20
 
 gfn:
   forward_model:
-    _target_: chunkgfn.models.mlp.MLP
+    _target_: chunkgfn.models.rnn.UnconditionalRNN
     num_layers: 1
     hidden_dim: 128
-    in_dim: 112
-    n_actions: 7
-    activation:
+    state_dim: 3
+    n_actions: 3
+    act:
       _target_: torch.nn.ReLU
   
   replay_buffer:
     capacity: 10000
-    reward_sampling: True
   
   reward_temperature: 0.3333
   library_update_frequency: 75 # Frequency of updating the library
@@ -44,4 +46,4 @@ gfn:
 
 logger:
   wandb:
-    group: "hypergrid"
+    group: "bit_sequence"

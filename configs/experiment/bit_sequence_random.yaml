@@ -23,7 +23,7 @@ data:
   batch_size: 64
 
 trainer:
-  max_epochs: 1000
+  max_epochs: 1500
 
 gfn:
   forward_model:
@@ -34,6 +34,10 @@ gfn:
     n_actions: 3
     act:
       _target_: torch.nn.ReLU
+  
+  replay_buffer:
+    capacity: 10000
+    reward_sampling: False
   
   reward_temperature: 0.3333
 
