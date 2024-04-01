@@ -110,6 +110,23 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
                 )[[self.atomic_tokens.index(x) for x in action]]
         return one_hot_action_tensor
 
+    @property
+    def action_indices(self) -> dict[str, int]:
+        """Get the action indices. For each action, if it's a primitive one then keep
+        its a list of one element which is its original index, otherwise, keep a list of
+        indices of the primitive actions that make up the action.
+        Returns:
+            action_indices (dict[str, list[int]]): Dictionary of action indices.
+        """
+        action_indices = {}
+        for action in self.actions:
+            if action != "<EOS>":
+                action_indices[action] = [self.atomic_tokens.index(a) for a in action]
+            else:
+                action_indices[action] = [0]
+
+        return action_indices
+
     def preprocess_state(self, states: torch.Tensor) -> torch.Tensor:
         """Preprocess states so that it can be input to the policy model.
         Args:
