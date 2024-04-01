@@ -110,7 +110,7 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
                 )[[self.atomic_tokens.index(x) for x in action]]
         return one_hot_action_tensor
 
-    def preprocess_states(self, states: torch.Tensor) -> torch.Tensor:
+    def preprocess_state(self, states: torch.Tensor) -> torch.Tensor:
         """Preprocess states so that it can be input to the policy model.
         Args:
             states (torch.Tensor[batch_size, max_len, dim]): The states.
@@ -368,8 +368,9 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
             self.action_len = torch.cat(
                 [self.action_len, torch.tensor([len(token)])], dim=0
             )
+            # Reset the action frequency
             self.action_frequency = torch.cat(
-                [self.action_frequency, torch.tensor([0.0])], dim=0
+                [self.action_frequency * 0, torch.tensor([0.0])], dim=0
             )
 
     def state_dict(self):

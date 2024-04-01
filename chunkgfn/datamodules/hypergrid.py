@@ -351,8 +351,9 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
             self.action_len = torch.cat(
                 [self.action_len, torch.tensor([len(token)])], dim=0
             )
+            # Reset the action frequency
             self.action_frequency = torch.cat(
-                [self.action_frequency, torch.tensor([0.0])], dim=0
+                [self.action_frequency * 0, torch.tensor([0.0])], dim=0
             )
 
     def state_dict(self):
