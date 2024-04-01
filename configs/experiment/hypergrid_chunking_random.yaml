@@ -29,9 +29,13 @@ gfn:
     num_layers: 1
     hidden_dim: 128
     in_dim: 112
-    n_actions: 7
+    action_embedding_dim: ${gfn.action_model.action_embedding_dimension}
     activation:
       _target_: torch.nn.ReLU
+  
+  action_model:
+    _target_: chunkgfn.models.action_encoder.ActionModel
+    n_primitive_actions: 7
   
   replay_buffer:
     capacity: 10000
