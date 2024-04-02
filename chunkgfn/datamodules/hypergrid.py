@@ -345,9 +345,13 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         # Consider actions for which the trajectory is not yet done
         dones = dones[:, :-1]  # The last step is always True
         action_strings = [
-            "".join([self.actions[j] for j in action if not dones[i, j]]).replace(
-                "<EXIT>", ""
-            )
+            "".join(
+                [
+                    self.actions[act_idx]
+                    for idx, act_idx in enumerate(action)
+                    if not dones[i, idx]
+                ]
+            ).replace("<EXIT>", "")
             for i, action in enumerate(actions)
         ]
 
@@ -371,6 +375,17 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
             # Reset the action frequency
             self.action_frequency = torch.cat(
                 [self.action_frequency * 0, torch.tensor([0.0])], dim=0
+            )
+
+    def remove_from_vocab(self, token):
+        if token in self.actions:
+            idx = self.actions.index(token)
+            self.actions.pop(idx)
+            self.action_len = torch.cat(
+                [self.action_len[:idx], self.action_len[idx + 1 :]], dim=0
+            )
+            self.action_frequency = torch.cat(
+                [self.action_frequency[:idx], self.action_frequency[idx + 1 :]], dim=0
             )
 
     def state_dict(self):
