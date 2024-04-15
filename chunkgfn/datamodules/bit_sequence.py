@@ -31,6 +31,17 @@ class BitSequenceModule(BaseSequenceModule):
             "1",
         ]
 
+        super().__init__(
+            atomic_tokens=atomic_tokens,
+            max_len=max_len,
+            num_train_iterations=num_train_iterations,
+            batch_size=batch_size,
+            sample_exact_length=sample_exact_length,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            **kwargs,
+        )
+
         self.oracle_difficulty = oracle_difficulty
         self.num_modes = num_modes
         self.threshold = threshold
