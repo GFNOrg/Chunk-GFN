@@ -23,17 +23,29 @@ class SMILESSequenceModule(BaseSequenceModule):
         sample_exact_length: bool = False,
         num_workers: int = 0,
         pin_memory: bool = False,
+        simple: bool = True,
         eps: float = 1e-12,
         **kwargs,
     ) -> None:
-        # fmt: off
-        atomic_tokens = [
-            "<EOS>", "#", "(", ")", "+", "-", "/", "1", "2", "3", "4", "5", "6", "7", "8", "=", "@", 
-            "B", "C", "F", "H", "I", "N", "O", "P", "S", "[", "\\", "]", "c", "l", "n", "o", "r", "s"
-        ]
-        # fmt: on
+        if simple:
+            # fmt: off
+            atomic_tokens = [
+                "<EOS>", "(", ")", "1", "2", "3", "=", "C", "N", "O"
+            ]
+            # fmt: on
+        else:
+            # fmt: off
+            atomic_tokens = [
+                "<EOS>", "#", "(", ")", "+", "-", "/", "1", "2", "3",
+                "4", "5", "6", "7", "8", "=", "@", "B", "C", "F", "H",
+                "I", "N", "O", "P", "S", "[", "\\", "]", "c", "l", "n",
+                "o", "r", "s"
+            ]
+            # fmt: on
 
         self.eps = eps
+        self.modes = []
+        self.len_modes = 0
 
         super().__init__(
             atomic_tokens=atomic_tokens,
