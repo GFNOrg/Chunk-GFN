@@ -166,7 +166,7 @@ class ChunkModule(LightningDataModule):
 
         return new_state, done
 
-    def get_invalid_actions_mask(self, states: torch.Tensor):
+    def get_forward_mask(self, states: torch.Tensor):
         """Get the invalid actions mask for a batch of states.
         Args:
             states (torch.Tensor[batch_size, max_len, dim]): Batch of states.

@@ -180,7 +180,7 @@ class ConditionalSequenceGFN(ABC, LightningModule):
             p_f_s = self.forward_model(x, state)
             uniform_dist_probs = torch.ones_like(p_f_s).to(p_f_s)
 
-            valid_actions_mask = self.trainer.datamodule.get_invalid_actions_mask(state)
+            valid_actions_mask = self.trainer.datamodule.get_forward_mask(state)
             p_f_s = torch.where(
                 valid_actions_mask, p_f_s, torch.tensor(NEGATIVE_INFINITY)
             )

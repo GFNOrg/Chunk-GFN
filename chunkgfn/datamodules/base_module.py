@@ -35,7 +35,7 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         self.persistent_workers = persistent_workers
 
     @abstractmethod
-    def preprocess_state(self, state: torch.Tensor) -> torch.Tensor:
+    def preprocess_states(self, state: torch.Tensor) -> torch.Tensor:
         """Preprocess the state so that it can be input to the policy model.
         Args:
             state (torch.Tensor[batch_size, *state_shape]): The state.
@@ -133,7 +133,7 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         NotImplementedError
 
     @abstractmethod
-    def get_invalid_actions_mask(self, states: torch.Tensor):
+    def get_forward_mask(self, states: torch.Tensor):
         """Get the invalid actions mask for a batch of states.
         Args:
             states (torch.Tensor[batch_size, max_len, dim]): Batch of states.
