@@ -46,6 +46,8 @@ class BitSequenceModule(BaseSequenceModule):
         self.num_modes = num_modes
         self.threshold = threshold
 
+        self.create_modes()
+
     def create_modes(self):
         """Create the modes for the bit-sequence task depending on the oracle difficulty.
         If the difficulty is "medium" then the modes all have the same length `max_len`

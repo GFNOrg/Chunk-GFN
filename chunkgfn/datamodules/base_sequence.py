@@ -74,8 +74,6 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
             len(self.actions)
         )  # Tracks the frequency of each action. Can change during training.
 
-        self.create_modes()
-
     @property
     def one_hot_action_tensor(self):
         """One-hot encoding tensor for self.actions. Actions that are composed of more than an atomic token,
