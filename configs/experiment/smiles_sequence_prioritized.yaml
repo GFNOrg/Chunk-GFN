@@ -18,6 +18,7 @@ data:
   num_train_iterations: 100
   sample_exact_length: False
   batch_size: 64
+  simple: True
 
 trainer:
   max_epochs: 1500
