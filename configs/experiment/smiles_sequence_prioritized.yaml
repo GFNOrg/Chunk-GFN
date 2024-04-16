@@ -1,0 +1,47 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+defaults:
+  - override /data: smiles_sequence.yaml
+  - override /gfn: tb_gfn_prioritized.yaml
+  - override /trainer: default.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+seed: 42
+
+data:
+  max_len: 32
+  num_train_iterations: 100
+  sample_exact_length: False
+  batch_size: 64
+  simple: True
+
+trainer:
+  max_epochs: 1500
+
+gfn:
+  forward_model:
+    _target_: chunkgfn.models.rnn.UnconditionalRNN
+    num_layers: 1
+    hidden_dim: 128
+    state_dim: 10
+    action_embedding_dim: ${gfn.action_model.action_embedding_dimension}
+    act:
+      _target_: torch.nn.ReLU
+
+  action_model:
+    _target_: chunkgfn.models.action_encoder.ActionModel
+    n_primitive_actions: 10
+
+  replay_buffer:
+    cutoff_distance: 3
+    capacity: 10000
+  reward_temperature: 0.3333
+
+logger:
+  wandb:
+    group: "smiles_sequence"

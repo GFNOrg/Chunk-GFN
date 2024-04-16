@@ -134,7 +134,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             logits (torch.Tensor[batch_size, n_actions]): Forward logits.
         """
         action_embedding = self.forward_model(
-            self.trainer.datamodule.preprocess_state(state)
+            self.trainer.datamodule.preprocess_states(state)
         )
         dim = action_embedding.shape[-1]
         library_embeddings = self.get_library_embeddings()
@@ -236,7 +236,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             logit_pf = self.get_forward_logits(state)
             uniform_dist_probs = torch.ones_like(logit_pf).to(logit_pf)
 
-            valid_actions_mask = self.trainer.datamodule.get_invalid_actions_mask(state)
+            valid_actions_mask = self.trainer.datamodule.get_forward_mask(state)
 
             logit_pf = torch.where(
                 valid_actions_mask,

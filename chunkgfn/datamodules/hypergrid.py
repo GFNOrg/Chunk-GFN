@@ -166,7 +166,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
 
         return action_indices
 
-    def preprocess_state(self, states: torch.Tensor) -> torch.Tensor:
+    def preprocess_states(self, states: torch.Tensor) -> torch.Tensor:
         """Preprocess the states so that it can be input to the policy model.
         Args:
             states (torch.Tensor[batch_size, ndim+1]): The states.
@@ -302,7 +302,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         new_states[~done] -= acting_tensor[backward_action[~done]]
         return new_states, done
 
-    def get_invalid_actions_mask(self, states: torch.Tensor):
+    def get_forward_mask(self, states: torch.Tensor):
         """Get the invalid actions mask for a batch of states.
         Args:
             states (torch.Tensor[batch_size, ndim+1]): Batch of states.
