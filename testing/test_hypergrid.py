@@ -26,7 +26,7 @@ def test_invalid_actions_mask_final(seed: int, ndim: int, side_length: int):
     state = torch.ones(ndim + 1) * (side_length - 1)
     state[-1] = 0
     state = state.unsqueeze(0)
-    mask = env.get_invalid_actions_mask(state)
+    mask = env.get_forward_mask(state)
     assert (
         tuple(mask.shape) == (state.shape[0], len(env.actions))
     ), f"Invalid mask shape is not correct. Expected {(state.shape[0], len(env.actions))} but got {tuple(mask.shape)}."
@@ -97,7 +97,7 @@ def test_hypergrid_invalid_actions(seed: int):
         ]
     )
 
-    mask = env.get_invalid_actions_mask(states)
+    mask = env.get_forward_mask(states)
     assert torch.all(mask == expected_mask), "Invalid mask is not correct."
 
 

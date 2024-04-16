@@ -25,6 +25,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         self,
         forward_model: torch.nn.Module,
         backward_model: torch.nn.Module,
+        action_model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
         epsilon_scheduler: Scheduler | None = None,
@@ -38,6 +39,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         # GFlowNet modules
         self.forward_model = forward_model
         self.backward_model = backward_model
+        self.action_model = action_model
         self.logZ = nn.Parameter(torch.zeros(1))
 
         # Schedulers for off-policy training
@@ -66,6 +68,15 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
                 {
                     "params": self.forward_model.parameters(),
                     "lr": self.hparams.forward_lr,
+                }
+            )
+        if self.action_model is not None and has_trainable_parameters(
+            self.action_model
+        ):
+            params.append(
+                {
+                    "params": self.action_model.parameters(),
+                    "lr": self.hparams.action_lr,
                 }
             )
         if self.backward_model is not None and has_trainable_parameters(
@@ -99,6 +110,39 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             }
         return {"optimizer": optimizer}
 
+    def get_library_embeddings(self):
+        """Produce embedding for all actions in the library.
+        Returns:
+            library_embeddings (torch.Tensor[n_actions, action_embedding]): Embeddings for all actions.
+        """
+        action_indices = self.trainer.datamodule.action_indices
+        library_embeddings = []
+        for action, indices in action_indices.items():
+            library_embeddings.append(
+                self.action_model(
+                    torch.LongTensor(indices).to(self.device).unsqueeze(0)
+                )
+            )
+        library_embeddings = torch.cat(library_embeddings, dim=0)
+        return library_embeddings
+
+    def get_forward_logits(self, state: torch.Tensor) -> torch.Tensor:
+        """Get the forward logits for the given state.
+        Args:
+            state (torch.Tensor[batch_size, *state_shape]): State.
+        Return:
+            logits (torch.Tensor[batch_size, n_actions]): Forward logits.
+        """
+        action_embedding = self.forward_model(
+            self.trainer.datamodule.preprocess_states(state)
+        )
+        dim = action_embedding.shape[-1]
+        library_embeddings = self.get_library_embeddings()
+        logits = torch.einsum("bd, nd -> bn", action_embedding, library_embeddings) / (
+            dim**0.5
+        )  # Same as in softmax
+        return logits
+
     def go_backward(
         self,
         final_state: torch.Tensor,
@@ -127,7 +171,9 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             logp_b_s = torch.where(
                 backward_actions == 1, torch.tensor(0.0), -torch.inf
             ).to(state)
-            # When no action is available, just fill with uniform because it won't be picked anyway in the backward_step. Doing this avoids having nan when computing probabilities
+            # When no action is available, just fill with uniform because
+            # it won't be picked anyway in the backward_step.
+            # Doing this avoids having nan when computing probabilities
             logp_b_s = torch.where(
                 (logp_b_s == -torch.inf).all(dim=-1).unsqueeze(1),
                 torch.tensor(0.0),
@@ -187,15 +233,15 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         )  # This tracks the length of trajetcory for each sample in the batch
 
         while not done.all():
-            p_f_s = self.forward_model(self.trainer.datamodule.preprocess_state(state))
-            uniform_dist_probs = torch.ones_like(p_f_s).to(p_f_s)
+            logit_pf = self.get_forward_logits(state)
+            uniform_dist_probs = torch.ones_like(logit_pf).to(logit_pf)
 
-            valid_actions_mask = self.trainer.datamodule.get_invalid_actions_mask(state)
+            valid_actions_mask = self.trainer.datamodule.get_forward_mask(state)
 
-            p_f_s = torch.where(
+            logit_pf = torch.where(
                 valid_actions_mask,
-                p_f_s,
-                torch.tensor(NEGATIVE_INFINITY).to(p_f_s),
+                logit_pf,
+                torch.tensor(NEGATIVE_INFINITY).to(logit_pf),
             )
             uniform_dist_probs = torch.where(
                 valid_actions_mask,
@@ -205,9 +251,9 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
 
             if train:
                 if temperature is not None:
-                    logits = p_f_s / (EPS + temperature)
+                    logits = logit_pf / (EPS + temperature)
                 else:
-                    logits = p_f_s
+                    logits = logit_pf
                 if epsilon is not None:
                     probs = torch.softmax(logits, dim=-1)
                     uniform_dist_probs = uniform_dist_probs / uniform_dist_probs.sum(
@@ -218,7 +264,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
                 else:
                     cat = Categorical(logits=logits)
             else:
-                cat = Categorical(logits=p_f_s)
+                cat = Categorical(logits=logit_pf)
 
             act = cat.sample()
 
@@ -280,18 +326,16 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         log_pb = 0
         for t in range(trajectories.shape[1]):
             state = trajectories[:, t]
-            logp_f_s = self.forward_model(
-                self.trainer.datamodule.preprocess_state(state)
-            )
+            logit_pf = self.get_forward_logits(state)
             if t < trajectories.shape[1] - 1:
-                log_pf += (Categorical(logits=logp_f_s).log_prob(actions[:, t])) * (
+                log_pf += (Categorical(logits=logit_pf).log_prob(actions[:, t])) * (
                     ~dones[:, t] + 0
                 )
             if t > 0:
                 backward_actions = self.trainer.datamodule.get_parent_actions(state)
                 logp_b_s = torch.where(
                     backward_actions == 1, torch.tensor(0.0), -torch.inf
-                ).to(logp_f_s)
+                ).to(logit_pf)
                 # When no action is available, just fill with uniform because it won't be picked anyway in the backward_step. Doing this avoids having nan when computing probabilities
                 logp_b_s = torch.where(
                     (logp_b_s == -torch.inf).all(dim=-1).unsqueeze(1),

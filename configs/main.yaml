@@ -47,3 +47,6 @@ ckpt_path: null
 
 # seed for random number generators in pytorch, numpy and python.random
 seed: null
+
+# Allows resuming from an existing checkpoint if the model happens to be the same (useful for pre-empting or resuming jobs in Orion)
+resume: True

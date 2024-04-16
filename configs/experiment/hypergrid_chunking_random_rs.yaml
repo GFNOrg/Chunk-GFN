@@ -5,7 +5,7 @@
 
 defaults:
   - override /data: hypergrid.yaml
-  - override /gfn: tb_gfn_variable_prioritized.yaml
+  - override /gfn: tb_gfn_variable_random.yaml
   - override /trainer: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
@@ -38,8 +38,8 @@ gfn:
     n_primitive_actions: 7
   
   replay_buffer:
-    cutoff_distance: 3
     capacity: 10000
+    reward_sampling: True
   
   reward_temperature: 0.3333
   library_update_frequency: 75 # Frequency of updating the library

@@ -149,7 +149,24 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
                 acting_tensor[i, -1] = 1  # The "exit" bit is on.
         return acting_tensor
 
-    def preprocess_state(self, states: torch.Tensor) -> torch.Tensor:
+    @property
+    def action_indices(self) -> dict[str, int]:
+        """Get the action indices. For each action, if it's a primitive one then keep
+        its a list of one element which is its original index, otherwise, keep a list of
+        indices of the primitive actions that make up the action.
+        Returns:
+            action_indices (dict[str, list[int]]): Dictionary of action indices.
+        """
+        action_indices = {}
+        for action in self.actions:
+            if action != "<EXIT>":
+                action_indices[action] = [ALPHABET.index(a) for a in action]
+            else:
+                action_indices[action] = [self.ndim]
+
+        return action_indices
+
+    def preprocess_states(self, states: torch.Tensor) -> torch.Tensor:
         """Preprocess the states so that it can be input to the policy model.
         Args:
             states (torch.Tensor[batch_size, ndim+1]): The states.
@@ -197,15 +214,22 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         if len(states.shape) == self.ndim + 1:
             states = states[:, :-1]  # If the state contains the "exit" bit, remove it.
 
-        normalized_coords = (states / (self.side_length - 1) - 0.5).abs()
+        # This is safer since floating point errors can occur.
+        normalized_coords = (20 * states - 10 * (self.side_length - 1)).abs()
         reward = (
             self.R0
             + self.R1
             * torch.prod(
-                (normalized_coords > 0.25) & (normalized_coords <= 0.5), dim=-1
+                (normalized_coords > 5 * (self.side_length - 1))
+                & (normalized_coords <= 10 * (self.side_length - 1)),
+                dim=-1,
             )
             + self.R2
-            * torch.prod((normalized_coords > 0.3) & (normalized_coords <= 0.4), dim=-1)
+            * torch.prod(
+                (normalized_coords > 6 * (self.side_length - 1))
+                & (normalized_coords <= 8 * (self.side_length - 1)),
+                dim=-1,
+            )
         )
         log_reward = _safe_log(reward)
 
@@ -220,9 +244,12 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         """
         metrics = {}
         states = states[:, :-1]  # The state contains the "exit" bit, remove it.
-        normalized_coords = (states / (self.side_length - 1) - 0.5).abs()
-        modes = torch.prod(
-            (normalized_coords > 0.3) & (normalized_coords <= 0.4), dim=-1
+        # This is safer since floating point errors can occur.
+        normalized_coords = (10 * states - 5 * (self.side_length - 1)).abs()
+        modes = torch.all(
+            (normalized_coords > 3 * (self.side_length - 1))
+            & (normalized_coords <= 4 * (self.side_length - 1)),
+            dim=-1,
         )
         modes_found = set([tuple(s.tolist()) for s in states[modes.bool()]])
         self.discovered_modes.update(modes_found)
@@ -275,7 +302,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         new_states[~done] -= acting_tensor[backward_action[~done]]
         return new_states, done
 
-    def get_invalid_actions_mask(self, states: torch.Tensor):
+    def get_forward_mask(self, states: torch.Tensor):
         """Get the invalid actions mask for a batch of states.
         Args:
             states (torch.Tensor[batch_size, ndim+1]): Batch of states.
@@ -318,9 +345,13 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         # Consider actions for which the trajectory is not yet done
         dones = dones[:, :-1]  # The last step is always True
         action_strings = [
-            "".join([self.actions[j] for j in action if not dones[i, j]]).replace(
-                "<EXIT>", ""
-            )
+            "".join(
+                [
+                    self.actions[act_idx]
+                    for idx, act_idx in enumerate(action)
+                    if not dones[i, idx]
+                ]
+            ).replace("<EXIT>", "")
             for i, action in enumerate(actions)
         ]
 
@@ -341,8 +372,20 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
             self.action_len = torch.cat(
                 [self.action_len, torch.tensor([len(token)])], dim=0
             )
+            # Reset the action frequency
             self.action_frequency = torch.cat(
-                [self.action_frequency, torch.tensor([0.0])], dim=0
+                [self.action_frequency * 0, torch.tensor([0.0])], dim=0
+            )
+
+    def remove_from_vocab(self, token):
+        if token in self.actions:
+            idx = self.actions.index(token)
+            self.actions.pop(idx)
+            self.action_len = torch.cat(
+                [self.action_len[:idx], self.action_len[idx + 1 :]], dim=0
+            )
+            self.action_frequency = torch.cat(
+                [self.action_frequency[:idx], self.action_frequency[idx + 1 :]], dim=0
             )
 
     def state_dict(self):

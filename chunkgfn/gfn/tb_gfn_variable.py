@@ -8,7 +8,6 @@ from torch.optim import lr_scheduler as lr_scheduler
 from torch.optim.optimizer import Optimizer as Optimizer
 
 from chunkgfn.gfn.base_unconditional_gfn import UnConditionalSequenceGFN
-from chunkgfn.models.utils import expand_linear_layer
 from chunkgfn.replay_buffer.base_replay_buffer import ReplayBuffer
 from chunkgfn.schedulers import Scheduler
 
@@ -18,6 +17,7 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
         self,
         forward_model: nn.Module,
         backward_model: nn.Module,
+        action_model: torch.nn.Module,
         optimizer: Optimizer,
         scheduler: Any,
         epsilon_scheduler: Scheduler | None = None,
@@ -28,6 +28,7 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
         super().__init__(
             forward_model,
             backward_model,
+            action_model,
             optimizer,
             scheduler,
             epsilon_scheduler,
@@ -52,18 +53,16 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
         log_pb = 0
         for t in range(trajectories.shape[1]):
             state = trajectories[:, t]
-            logp_f_s = self.forward_model(
-                self.trainer.datamodule.preprocess_state(state)
-            )
+            logit_pf = self.get_forward_logits(state)
             if t < trajectories.shape[1] - 1:
-                log_pf += (Categorical(logits=logp_f_s).log_prob(actions[:, t])) * (
+                log_pf += (Categorical(logits=logit_pf).log_prob(actions[:, t])) * (
                     ~dones[:, t] + 0
                 )
             if t > 0:
                 backward_actions = self.trainer.datamodule.get_parent_actions(state)
                 logp_b_s = torch.where(
                     backward_actions == 1, torch.tensor(0.0), -torch.inf
-                ).to(logp_f_s)
+                ).to(logit_pf)
                 # When no action is available, just fill with uniform because it won't be picked anyway in the backward_step. Doing this avoids having nan when computing probabilities
                 logp_b_s = torch.where(
                     (logp_b_s == -torch.inf).all(dim=-1).unsqueeze(1),
@@ -96,20 +95,6 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
         samples = self.replay_buffer.sample(self.hparams.n_samples)
         # Get the most valuable token
         self.trainer.datamodule.chunk(samples["actions"], samples["dones"])
-
-        # Update model's weights
-        def init_weights(m):
-            m.bias.data.fill_(0.0)
-            m.weight.data.fill_(0.0)
-
-        self.forward_model.logits_layer = expand_linear_layer(
-            self.forward_model.logits_layer,
-            new_out_dim=self.forward_model.logits_layer.out_features + 1,
-            init_weights=None,
-        )
-
-        # Reinitialize the optimizer
-        self.trainer.optimizers = [self.configure_optimizers()["optimizer"]]
 
     def training_step(self, train_batch, batch_idx) -> Any:
         loss = super().training_step(train_batch, batch_idx)

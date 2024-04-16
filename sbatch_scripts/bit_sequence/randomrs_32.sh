@@ -11,4 +11,4 @@ module load libffi
 module load OpenSSL/1.1
 source $VENV/ai_scientist/bin/activate
 
-python main.py seed=42 experiment=bit_sequence_chunking data.max_len=128 gfn.replay_buffer.cutoff_distance=25 logger.wandb.name="lib-len-128"
+python main.py seed=42 experiment=bit_sequence_random_rs data.max_len=32 logger.wandb.name="randomrs-len-32"

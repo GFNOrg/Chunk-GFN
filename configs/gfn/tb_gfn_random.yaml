@@ -11,6 +11,12 @@ forward_model: null
   
 backward_model: null
 
+action_model:
+  _target_: chunkgfn.models.action_encoder.ActionModel
+  n_primitive_actions: 3
+  hidden_dim: 128
+  action_embedding_dimension: 128
+
 epsilon_scheduler:
   _target_: chunkgfn.schedulers.linear_schedule.LinearSchedule
   initial_value: 0.5
@@ -21,9 +27,11 @@ replay_buffer:
   _target_: chunkgfn.replay_buffer.random_replay.RandomReplay
   capacity: 2500
   is_conditional: False
+  reward_sampling: False
 
 forward_lr: 1e-4
 partition_lr: 1e-3
+action_lr: 1e-4
 monitor: val/logreward
 ratio_from_replay_buffer: 0.55 # Ratio of samples from replay buffer
 n_trajectories: 1 # Number of test trajectories to sample
