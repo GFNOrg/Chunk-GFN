@@ -324,10 +324,16 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
         tokenizer.pre_tokenizer = Whitespace()
         trainer = BpeTrainer(vocab_size=len(self.actions))
         tokenizer.train_from_iterator(action_strings, trainer=trainer)
-        new_token = list(
-            set(tokenizer.get_vocab().keys()).difference(set(self.actions))
-        )[0]
-        self.add_to_vocab(new_token)
+
+        # Sorts the BPE vocab dict by occurance ascending, finds the most useful
+        # novel token.
+        vocab = {  # NB: This will sort the keys by the values ascending.
+            k: v for k, v in sorted(
+                tokenizer.get_vocab().items(), key=lambda item: item[1]
+            )
+        }
+        novel_tokens = [x for x in list(vocab.keys()) if x not in self.actions]
+        self.add_to_vocab(novel_tokens[-1])  # -1 as we sort ascending.
 
     def add_to_vocab(self, token):
         if token not in self.actions:
