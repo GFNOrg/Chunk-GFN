@@ -6,8 +6,8 @@ import random
 import torch
 from lightning import LightningDataModule
 from torch.utils.data import DataLoader, Dataset
-from tokenizers.trainers import BpeTrainer
-from tokenizers.models import BPE
+from tokenizers.trainers import BpeTrainer, WordPieceTrainer
+from tokenizers.models import BPE, WordPiece
 from tokenizers.pre_tokenizers import Whitespace
 from tokenizers import Tokenizer
 
@@ -212,6 +212,31 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         tokenizer.train_from_iterator(action_strings, trainer=trainer)
 
         # Sorts the BPE vocab dict by occurance ascending, finds the most useful
+        # novel token.
+        novel_tokens = set(tokenizer.get_vocab().keys()) - set(self.actions)
+        self.add_to_vocab(list(novel_tokens))
+
+    def chunk_wordpiece(self, actions: torch.Tensor, dones: torch.Tensor, n_tokens_to_add: int):
+        """Find the most valuable subsequence of actions from the corpus.
+        Args:
+            actions (torch.Tensor[batch_size, traj_length]): Batch of sequence of actions.
+            dones (torch.Tensor[batch_size, traj_length]): Batch of sequence of terminations.
+        """
+        action_strings = self._make_action_strings(actions, dones)
+
+        # Apply WP algorithm to the state_strings and get the most frequent token
+        vocab_dict = {k: i for i, k in enumerate(self.actions)}
+        tokenizer = Tokenizer(WordPiece(vocab=vocab_dict, unk_token="[UNK]"))
+
+        # vocab size is number of current actions (removing exit), plus n.
+        vocab_size = len(self.actions) - 1 + n_tokens_to_add
+        trainer = WordPieceTrainer(
+            vocab_size=vocab_size,
+            continuing_subword_prefix="",  # No prefix allowed.
+        )
+        tokenizer.train_from_iterator(action_strings, trainer=trainer)
+
+        # Sorts the WP vocab dict by occurance ascending, finds the most useful
         # novel token.
         novel_tokens = set(tokenizer.get_vocab().keys()) - set(self.actions)
         self.add_to_vocab(list(novel_tokens))
