@@ -1,6 +1,7 @@
 import gzip
 import os
 from collections import Counter
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -14,6 +15,7 @@ from tokenizers.trainers import BpeTrainer
 from torch.utils.data import Dataset
 
 from chunkgfn.utils import default_data_path
+
 
 
 def load_fasta_into_dict(data_dir):
@@ -134,6 +136,11 @@ class CCDS(Dataset):
 
     def decode(self, ids: list):
         return self.tokenizer.decode(ids)
+
+
+def default_data_path():
+    path = Path(os.path.abspath(__file__))
+    return os.path.join(str(path.parent.parent.parent), "data")
 
 
 if __name__ == "__main__":
