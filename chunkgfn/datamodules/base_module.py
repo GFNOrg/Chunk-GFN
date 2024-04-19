@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Optional
+from copy import copy
+import random
 
 import torch
 from lightning import LightningDataModule
@@ -36,6 +38,7 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         self.data_val: Optional[Dataset] = None
         self.data_test: Optional[Dataset] = None
         self.persistent_workers = persistent_workers
+        self.exit_action = "<EOS>"
 
     @abstractmethod
     def preprocess_states(self, state: torch.Tensor) -> torch.Tensor:
@@ -155,7 +158,11 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         NotImplementedError
 
     def _make_action_strings(self, actions, dones):
-        """<EOS>"""
+        """First removes the exit action and then converts actions indicrs to strings.
+        Args:
+            actions: Tensor of action indices
+            dones: Tensor of whether the trajectories are done or not.
+        """
         # Convert token indices to strings
         dones = dones[:, :-1]  # The last step is always True
 
@@ -166,13 +173,27 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
                     for idx, act_idx in enumerate(action)
                     if not dones[i, idx]
                 ]
-            ).replace("<EOS>", "")
+            ).replace(self.exit_action, "")
             for i, action in enumerate(actions)
         ]
 
         return action_strings
 
-    def chunk(self, actions: torch.Tensor, dones: torch.Tensor, n_tokens_to_add: int):
+    def chunk_uniform(self, n_tokens_to_add: int):
+        """Adds random bigrams to the action space, using current actions."""
+        non_exit_actions = copy(self.actions)
+        non_exit_actions.remove(self.exit_action)
+
+        novel_tokens = set()
+        while len(novel_tokens) < n_tokens_to_add:
+            # Get a bigram.
+            candidate_token = "".join(random.choices(non_exit_actions, k=2))
+            if candidate_token not in non_exit_actions:
+                novel_tokens.add(candidate_token)  # Removes duplicates.
+
+        self.add_to_vocab(list(novel_tokens))
+
+    def chunk_bpe(self, actions: torch.Tensor, dones: torch.Tensor, n_tokens_to_add: int):
         """Find the most valuable subsequence of actions from the corpus.
         Args:
             actions (torch.Tensor[batch_size, traj_length]): Batch of sequence of actions.
