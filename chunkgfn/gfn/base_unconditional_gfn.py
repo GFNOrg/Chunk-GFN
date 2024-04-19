@@ -502,7 +502,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             on_epoch=True,
             prog_bar=True,
         )
-        self.log_action_histogram()
+
         for metric_name in additional_metrics:
             self.log(
                 f"train/{metric_name}",

@@ -104,6 +104,7 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
             and self.current_epoch % self.hparams.library_update_frequency == 0
             and batch_idx == 0
         ):
+            self.log_action_histogram()
             self.update_library()
 
         else:
