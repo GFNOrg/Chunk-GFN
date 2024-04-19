@@ -150,4 +150,7 @@ if __name__ == "__main__":
         timestamp = datetime.datetime.now().strftime("%d%m%y-%H:%M:%S")
         os.environ["SLURM_JOB_NAME"] = "chunkgfn_test_{}".format(timestamp)
 
+    if "SCRATCH" not in os.environ:
+        os.environ["SCRATCH"] = os.path.expanduser('~')
+
     main()
