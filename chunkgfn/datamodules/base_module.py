@@ -11,6 +11,7 @@ from tokenizers.models import BPE
 from tokenizers.pre_tokenizers import Whitespace
 from tokenizers import Tokenizer
 
+
 class BaseEnvironmentModule(LightningDataModule, ABC):
     """A `BaseEnvironmentModule` for defining environment datamodules."""
 
