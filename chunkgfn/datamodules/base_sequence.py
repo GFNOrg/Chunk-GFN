@@ -55,7 +55,7 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
         # Environment variables
         self.discovered_modes = set()  # Tracks the number of modes we discovered
         self.visited = set()  # Tracks the number of states we visited
-        self.atomic_tokens = atomic_tokens  # Atomic tokens for representing the states. Stays fixed during training.
+        self.atomic_tokens = [self.exit_action] + atomic_tokens  # Atomic tokens for representing the states. Stays fixed during training.
         self.s0 = -torch.ones(
             1 + self.max_len, len(self.atomic_tokens)
         )  # Initial state
@@ -80,7 +80,7 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
         )
         for action in self.actions:
             idx = self.actions.index(action)
-            if action == "<EOS>":
+            if action == self.exit_action:
                 one_hot_action_tensor[idx, :1] = torch.eye(len(self.atomic_tokens))[
                     self.atomic_tokens.index(action)
                 ]
@@ -100,7 +100,7 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
         """
         action_indices = {}
         for action in self.actions:
-            if action != "<EOS>":
+            if action != self.exit_action:
                 action_indices[action] = [self.atomic_tokens.index(a) for a in action]
             else:
                 action_indices[action] = [0]
@@ -237,7 +237,7 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
         actions_mask = len_tokens_to_go.unsqueeze(1) > self.action_len.to(
             states.device
         ).unsqueeze(0)  # Only use actions that can fit in the state
-        eos_token_idx = self.atomic_tokens.index("<EOS>")
+        eos_token_idx = self.atomic_tokens.index(self.exit_action)
         if self.sample_exact_length:
             # Don't allow the EOS token to be sampled if the state is not full
             actions_mask[len_tokens_to_go > 1, eos_token_idx] = 0
