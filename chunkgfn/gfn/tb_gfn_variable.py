@@ -102,11 +102,16 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
                 samples["dones"],
                 n_tokens_to_add=n,
             )
+        elif self.hparams.chunk_algorithm == "wordpiece":
+            self.trainer.datamodule.chunk_wordpiece(
+                samples["actions"],
+                samples["dones"],
+                n_tokens_to_add=n,
+            )
         elif self.hparams.chunk_algorithm == "uniform":
             self.trainer.datamodule.chunk_uniform(n_tokens_to_add=n)
         else:
-            raise Exception("chunk_algorithm not in ['bpe', 'uniform']")
-
+            raise Exception("chunk_algorithm not in ['bpe', 'wordpiece', 'uniform']")
 
     def training_step(self, train_batch, batch_idx) -> Any:
         loss = super().training_step(train_batch, batch_idx)
