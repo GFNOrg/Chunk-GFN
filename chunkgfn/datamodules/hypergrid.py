@@ -336,14 +336,11 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         )
         return parent_actions
 
-    def chunk(self, actions: torch.Tensor, dones: torch.Tensor):
-        """Find the most valuable subsequence of actions from the corpus.
-        Args:
-            actions (torch.Tensor[batch_size, traj_length]): Batch of sequence of actions.
-            dones (torch.Tensor[batch_size, traj_length]): Batch of sequence of terminations.
-        """
-        # Consider actions for which the trajectory is not yet done
+    def _make_action_strings(self, actions, dones):
+        """<EXIT>"""
+        # Convert token indices to strings
         dones = dones[:, :-1]  # The last step is always True
+
         action_strings = [
             "".join(
                 [
@@ -355,38 +352,59 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
             for i, action in enumerate(actions)
         ]
 
-        # Apply BPE algorithm to the state_strings and get the most frequent token
-        vocab_dict = {k: i for i, k in enumerate(self.actions)}
-        tokenizer = Tokenizer(BPE(vocab_dict, [], unk_token="[UNK]"))
-        tokenizer.pre_tokenizer = Whitespace()
-        trainer = BpeTrainer(vocab_size=len(self.actions))
-        tokenizer.train_from_iterator(action_strings, trainer=trainer)
-        new_token = list(
-            set(tokenizer.get_vocab().keys()).difference(set(self.actions))
-        )[0]
-        self.add_to_vocab(new_token)
+        return action_strings
 
-    def add_to_vocab(self, token):
-        if token not in self.actions:
-            self.actions.append(token)
-            self.action_len = torch.cat(
-                [self.action_len, torch.tensor([len(token)])], dim=0
-            )
-            # Reset the action frequency
-            self.action_frequency = torch.cat(
-                [self.action_frequency * 0, torch.tensor([0.0])], dim=0
-            )
+    # def chunk(self, actions: torch.Tensor, dones: torch.Tensor):
+    #     """Find the most valuable subsequence of actions from the corpus.
+    #     Args:
+    #         actions (torch.Tensor[batch_size, traj_length]): Batch of sequence of actions.
+    #         dones (torch.Tensor[batch_size, traj_length]): Batch of sequence of terminations.
+    #     """
+    #     # Consider actions for which the trajectory is not yet done
+    #     dones = dones[:, :-1]  # The last step is always True
+    #     action_strings = [
+    #         "".join(
+    #             [
+    #                 self.actions[act_idx]
+    #                 for idx, act_idx in enumerate(action)
+    #                 if not dones[i, idx]
+    #             ]
+    #         ).replace("<EXIT>", "")
+    #         for i, action in enumerate(actions)
+    #     ]
 
-    def remove_from_vocab(self, token):
-        if token in self.actions:
-            idx = self.actions.index(token)
-            self.actions.pop(idx)
-            self.action_len = torch.cat(
-                [self.action_len[:idx], self.action_len[idx + 1 :]], dim=0
-            )
-            self.action_frequency = torch.cat(
-                [self.action_frequency[:idx], self.action_frequency[idx + 1 :]], dim=0
-            )
+    #     # Apply BPE algorithm to the state_strings and get the most frequent token
+    #     vocab_dict = {k: i for i, k in enumerate(self.actions)}
+    #     tokenizer = Tokenizer(BPE(vocab_dict, [], unk_token="[UNK]"))
+    #     tokenizer.pre_tokenizer = Whitespace()
+    #     trainer = BpeTrainer(vocab_size=len(self.actions))
+    #     tokenizer.train_from_iterator(action_strings, trainer=trainer)
+    #     new_token = list(
+    #         set(tokenizer.get_vocab().keys()).difference(set(self.actions))
+    #     )[0]
+    #     self.add_to_vocab(new_token)
+
+    # def add_to_vocab(self, token):
+    #     if token not in self.actions:
+    #         self.actions.append(token)
+    #         self.action_len = torch.cat(
+    #             [self.action_len, torch.tensor([len(token)])], dim=0
+    #         )
+    #         # Reset the action frequency
+    #         self.action_frequency = torch.cat(
+    #             [self.action_frequency * 0, torch.tensor([0.0])], dim=0
+    #         )
+
+    # def remove_from_vocab(self, token):
+    #     if token in self.actions:
+    #         idx = self.actions.index(token)
+    #         self.actions.pop(idx)
+    #         self.action_len = torch.cat(
+    #             [self.action_len[:idx], self.action_len[idx + 1 :]], dim=0
+    #         )
+    #         self.action_frequency = torch.cat(
+    #             [self.action_frequency[:idx], self.action_frequency[idx + 1 :]], dim=0
+    #         )
 
     def state_dict(self):
         state = {

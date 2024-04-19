@@ -2,10 +2,6 @@ from abc import ABC
 from typing import List
 
 import torch
-from tokenizers import Tokenizer
-from tokenizers.models import BPE
-from tokenizers.pre_tokenizers import Whitespace
-from tokenizers.trainers import BpeTrainer
 from torch.utils.data import Dataset
 
 from .base_module import BaseUnconditionalEnvironmentModule
@@ -299,63 +295,6 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
             .long()
         )
         return parent_actions
-
-    def chunk(self, actions: torch.Tensor, dones: torch.Tensor):
-        """Find the most valuable subsequence of actions from the corpus.
-        Args:
-            actions (torch.Tensor[batch_size, traj_length]): Batch of sequence of actions.
-            dones (torch.Tensor[batch_size, traj_length]): Batch of sequence of terminations.
-        """
-        # Convert token indices to strings
-        dones = dones[:, :-1]  # The last step is always True
-        action_strings = [
-            "".join(
-                [
-                    self.actions[act_idx]
-                    for idx, act_idx in enumerate(action)
-                    if not dones[i, idx]
-                ]
-            ).replace("<EOS>", "")
-            for i, action in enumerate(actions)
-        ]
-        # Apply BPE algorithm to the state_strings and get the most frequent token
-        vocab_dict = {k: i for i, k in enumerate(self.actions)}
-        tokenizer = Tokenizer(BPE(vocab_dict, [], unk_token="[UNK]"))
-        tokenizer.pre_tokenizer = Whitespace()
-        trainer = BpeTrainer(vocab_size=len(self.actions))
-        tokenizer.train_from_iterator(action_strings, trainer=trainer)
-
-        # Sorts the BPE vocab dict by occurance ascending, finds the most useful
-        # novel token.
-        vocab = {  # NB: This will sort the keys by the values ascending.
-            k: v for k, v in sorted(
-                tokenizer.get_vocab().items(), key=lambda item: item[1]
-            )
-        }
-        novel_tokens = [x for x in list(vocab.keys()) if x not in self.actions]
-        self.add_to_vocab(novel_tokens[-1])  # -1 as we sort ascending.
-
-    def add_to_vocab(self, token):
-        if token not in self.actions:
-            self.actions.append(token)
-            self.action_len = torch.cat(
-                [self.action_len, torch.tensor([len(token)])], dim=0
-            )
-            # Reset the action frequency
-            self.action_frequency = torch.cat(
-                [self.action_frequency * 0, torch.tensor([0.0])], dim=0
-            )
-
-    def remove_from_vocab(self, token):
-        if token in self.actions:
-            idx = self.actions.index(token)
-            self.actions.pop(idx)
-            self.action_len = torch.cat(
-                [self.action_len[:idx], self.action_len[idx + 1 :]], dim=0
-            )
-            self.action_frequency = torch.cat(
-                [self.action_frequency[:idx], self.action_frequency[idx + 1 :]], dim=0
-            )
 
     def state_dict(self):
         state = {
