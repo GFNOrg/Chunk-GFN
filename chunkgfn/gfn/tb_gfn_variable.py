@@ -93,8 +93,8 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
 
         # Pick a number of generated samples from the replay buffer
         samples = self.replay_buffer.sample(self.hparams.n_samples)
-        # Get the most valuable token
-        self.trainer.datamodule.chunk(samples["actions"], samples["dones"])
+        # Get the most valuable token TODO: make n_tokens_to_add configurable.
+        self.trainer.datamodule.chunk(samples["actions"], samples["dones"], n_tokens_to_add=10)
 
     def training_step(self, train_batch, batch_idx) -> Any:
         loss = super().training_step(train_batch, batch_idx)
