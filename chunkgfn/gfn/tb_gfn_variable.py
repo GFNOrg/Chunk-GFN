@@ -96,11 +96,17 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
         # Pick a number of generated samples from the replay buffer
         samples = self.replay_buffer.sample(self.hparams.n_samples)
         # Get the most valuable token TODO: make n_tokens_to_add configurable.
-        self.trainer.datamodule.chunk(
-            samples["actions"],
-            samples["dones"],
-            n_tokens_to_add=n,
-        )
+        if self.hparams.chunk_algorithm == "bpe":
+            self.trainer.datamodule.chunk_bpe(
+                samples["actions"],
+                samples["dones"],
+                n_tokens_to_add=n,
+            )
+        elif self.hparams.chunk_algorithm == "uniform":
+            self.trainer.datamodule.chunk_uniform(n_tokens_to_add=n)
+        else:
+            raise Exception("chunk_algorithm not in ['bpe', 'uniform']")
+
 
     def training_step(self, train_batch, batch_idx) -> Any:
         loss = super().training_step(train_batch, batch_idx)
