@@ -83,18 +83,24 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
 
         return loss, logZ
 
-    def update_library(self):
+    def update_library(self, n):
         """Update the library. This function will do the following, in the following order:
         1. Pick a number of generated samples from the replay buffer.
         2. Transform samples into their usual data structure.
         3. Apply a tokenizing algorithm to get the most valuable token.
         4. Update the logits_layer to reflect the added token.
+
+        n: number of tokens to add.
         """
 
         # Pick a number of generated samples from the replay buffer
         samples = self.replay_buffer.sample(self.hparams.n_samples)
         # Get the most valuable token TODO: make n_tokens_to_add configurable.
-        self.trainer.datamodule.chunk(samples["actions"], samples["dones"], n_tokens_to_add=10)
+        self.trainer.datamodule.chunk(
+            samples["actions"],
+            samples["dones"],
+            n_tokens_to_add=n,
+        )
 
     def training_step(self, train_batch, batch_idx) -> Any:
         loss = super().training_step(train_batch, batch_idx)
@@ -104,8 +110,7 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
             and self.current_epoch % self.hparams.library_update_frequency == 0
             and batch_idx == 0
         ):
-            self.log_action_histogram()
-            self.update_library()
+            self.update_library(n=self.hparams.n_chunks)
 
         else:
             opt = self.optimizers()

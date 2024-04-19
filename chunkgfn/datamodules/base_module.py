@@ -172,7 +172,7 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
 
         return action_strings
 
-    def chunk(self, actions: torch.Tensor, dones: torch.Tensor, n_tokens_to_add: int = 1):
+    def chunk(self, actions: torch.Tensor, dones: torch.Tensor, n_tokens_to_add: int):
         """Find the most valuable subsequence of actions from the corpus.
         Args:
             actions (torch.Tensor[batch_size, traj_length]): Batch of sequence of actions.
