@@ -159,7 +159,7 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         NotImplementedError
 
     def _make_action_strings(self, actions, dones):
-        """First removes the exit action and then converts actions indicrs to strings.
+        """First removes the exit action and then converts actions indices to strings.
         Args:
             actions: Tensor of action indices
             dones: Tensor of whether the trajectories are done or not.
