@@ -14,11 +14,6 @@ from itertools import combinations
 from chunkgfn.datamodules.base_sequence import BaseSequenceModule
 
 
-# min_distance = np.inf
-# for i, c in enumerate(comparisons):
-#     dist =
-
-
 def find_closest_match(query, trie, max_cost=2):
     # Start by finding candidates that share at least a part of the prefix
     # We generate prefixes of the query to a certain reasonable length
