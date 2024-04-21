@@ -8,7 +8,7 @@ optimizer:
 scheduler: null
 
 forward_model: null
-  
+
 backward_model: null
 
 action_model:
@@ -40,3 +40,5 @@ reward_temperature: 1.0 # Temperature for the reward
 library_update_frequency: 10 # Frequency of updating the library
 n_samples: 1000 # Number of samples to draw from the library
 weight_initialization: average # Weight initialization for the the new token
+n_chunks: 1 # Number of chunks to add per round
+chunk_algorithm: "uniform" # Algorithm to select chunks, can be either "uniform" or "bpe"

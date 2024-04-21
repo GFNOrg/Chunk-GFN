@@ -114,6 +114,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         self.R2 = R2
 
         # Environment variables
+        self.exit_action = "<EXIT>"
         self.discovered_modes = set()  # Tracks the number of modes we discovered
         self.visited = set()  # Tracks the number of states we visited
 
@@ -121,15 +122,14 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         self.sf = torch.cat(
             [torch.ones(self.ndim) * (self.side_length - 1), torch.tensor([1])]
         ).long()  # Final state
-        self.actions = [ALPHABET[i] for i in range(self.ndim)] + [
-            "<EXIT>"
-        ]  # Actions can change during training
+        self.actions = [ALPHABET[i] for i in range(self.ndim)] + [self.exit_action] # Actions can change during training
         self.action_len = torch.Tensor(
             [1] * len(self.actions)
         ).long()  # Length of each action. Can change during training.
         self.action_frequency = torch.zeros(
             len(self.actions)
         )  # Tracks the frequency of each action. Can change during training.
+
 
     @property
     def acting_tensor(self) -> torch.Tensor:
@@ -142,7 +142,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         acting_tensor = torch.zeros(len(self.actions), self.ndim + 1).long()
         for i, action in enumerate(self.actions):
             # The <EXIT> action is like adding a zero vector to the state.
-            if action != "<EXIT>":
+            if action != self.exit_action:
                 for a in action:
                     acting_tensor[i, ALPHABET.index(a)] += 1
             else:
@@ -159,7 +159,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         """
         action_indices = {}
         for action in self.actions:
-            if action != "<EXIT>":
+            if action != self.exit_action:
                 action_indices[action] = [ALPHABET.index(a) for a in action]
             else:
                 action_indices[action] = [self.ndim]
@@ -314,7 +314,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         acting_tensor = self.acting_tensor.unsqueeze(0).to(states.device)
         actions_mask = (diff.unsqueeze(1) >= acting_tensor).all(dim=-1)
         actions_mask[self.is_terminal_state(states)] = False
-        actions_mask[self.is_terminal_state(states), self.actions.index("<EXIT>")] = (
+        actions_mask[self.is_terminal_state(states), self.actions.index(self.exit_action)] = (
             True
         )
 
@@ -331,62 +331,10 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
 
         # When it's an exit state, only the <EXIT> backward action is allowed.
         parent_actions[self.is_terminal_state(states)] = False
-        parent_actions[self.is_terminal_state(states), self.actions.index("<EXIT>")] = (
+        parent_actions[self.is_terminal_state(states), self.actions.index(self.exit_action)] = (
             True
         )
         return parent_actions
-
-    def chunk(self, actions: torch.Tensor, dones: torch.Tensor):
-        """Find the most valuable subsequence of actions from the corpus.
-        Args:
-            actions (torch.Tensor[batch_size, traj_length]): Batch of sequence of actions.
-            dones (torch.Tensor[batch_size, traj_length]): Batch of sequence of terminations.
-        """
-        # Consider actions for which the trajectory is not yet done
-        dones = dones[:, :-1]  # The last step is always True
-        action_strings = [
-            "".join(
-                [
-                    self.actions[act_idx]
-                    for idx, act_idx in enumerate(action)
-                    if not dones[i, idx]
-                ]
-            ).replace("<EXIT>", "")
-            for i, action in enumerate(actions)
-        ]
-
-        # Apply BPE algorithm to the state_strings and get the most frequent token
-        vocab_dict = {k: i for i, k in enumerate(self.actions)}
-        tokenizer = Tokenizer(BPE(vocab_dict, [], unk_token="[UNK]"))
-        tokenizer.pre_tokenizer = Whitespace()
-        trainer = BpeTrainer(vocab_size=len(self.actions))
-        tokenizer.train_from_iterator(action_strings, trainer=trainer)
-        new_token = list(
-            set(tokenizer.get_vocab().keys()).difference(set(self.actions))
-        )[0]
-        self.add_to_vocab(new_token)
-
-    def add_to_vocab(self, token):
-        if token not in self.actions:
-            self.actions.append(token)
-            self.action_len = torch.cat(
-                [self.action_len, torch.tensor([len(token)])], dim=0
-            )
-            # Reset the action frequency
-            self.action_frequency = torch.cat(
-                [self.action_frequency * 0, torch.tensor([0.0])], dim=0
-            )
-
-    def remove_from_vocab(self, token):
-        if token in self.actions:
-            idx = self.actions.index(token)
-            self.actions.pop(idx)
-            self.action_len = torch.cat(
-                [self.action_len[:idx], self.action_len[idx + 1 :]], dim=0
-            )
-            self.action_frequency = torch.cat(
-                [self.action_frequency[:idx], self.action_frequency[idx + 1 :]], dim=0
-            )
 
     def state_dict(self):
         state = {

@@ -2,10 +2,6 @@ from abc import ABC
 from typing import List
 
 import torch
-from tokenizers import Tokenizer
-from tokenizers.models import BPE
-from tokenizers.pre_tokenizers import Whitespace
-from tokenizers.trainers import BpeTrainer
 from torch.utils.data import Dataset
 
 from .base_module import BaseUnconditionalEnvironmentModule
@@ -59,7 +55,7 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
         # Environment variables
         self.discovered_modes = set()  # Tracks the number of modes we discovered
         self.visited = set()  # Tracks the number of states we visited
-        self.atomic_tokens = atomic_tokens  # Atomic tokens for representing the states. Stays fixed during training.
+        self.atomic_tokens = [self.exit_action] + atomic_tokens  # Atomic tokens for representing the states. Stays fixed during training.
         self.s0 = -torch.ones(
             1 + self.max_len, len(self.atomic_tokens)
         )  # Initial state
@@ -84,7 +80,7 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
         )
         for action in self.actions:
             idx = self.actions.index(action)
-            if action == "<EOS>":
+            if action == self.exit_action:
                 one_hot_action_tensor[idx, :1] = torch.eye(len(self.atomic_tokens))[
                     self.atomic_tokens.index(action)
                 ]
@@ -104,7 +100,7 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
         """
         action_indices = {}
         for action in self.actions:
-            if action != "<EOS>":
+            if action != self.exit_action:
                 action_indices[action] = [self.atomic_tokens.index(a) for a in action]
             else:
                 action_indices[action] = [0]
@@ -241,7 +237,7 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
         actions_mask = len_tokens_to_go.unsqueeze(1) > self.action_len.to(
             states.device
         ).unsqueeze(0)  # Only use actions that can fit in the state
-        eos_token_idx = self.atomic_tokens.index("<EOS>")
+        eos_token_idx = self.atomic_tokens.index(self.exit_action)
         if self.sample_exact_length:
             # Don't allow the EOS token to be sampled if the state is not full
             actions_mask[len_tokens_to_go > 1, eos_token_idx] = 0
@@ -299,57 +295,6 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
             .long()
         )
         return parent_actions
-
-    def chunk(self, actions: torch.Tensor, dones: torch.Tensor):
-        """Find the most valuable subsequence of actions from the corpus.
-        Args:
-            actions (torch.Tensor[batch_size, traj_length]): Batch of sequence of actions.
-            dones (torch.Tensor[batch_size, traj_length]): Batch of sequence of terminations.
-        """
-        # Convert token indices to strings
-        dones = dones[:, :-1]  # The last step is always True
-        action_strings = [
-            "".join(
-                [
-                    self.actions[act_idx]
-                    for idx, act_idx in enumerate(action)
-                    if not dones[i, idx]
-                ]
-            ).replace("<EOS>", "")
-            for i, action in enumerate(actions)
-        ]
-        # Apply BPE algorithm to the state_strings and get the most frequent token
-        vocab_dict = {k: i for i, k in enumerate(self.actions)}
-        tokenizer = Tokenizer(BPE(vocab_dict, [], unk_token="[UNK]"))
-        tokenizer.pre_tokenizer = Whitespace()
-        trainer = BpeTrainer(vocab_size=len(self.actions))
-        tokenizer.train_from_iterator(action_strings, trainer=trainer)
-        new_token = list(
-            set(tokenizer.get_vocab().keys()).difference(set(self.actions))
-        )[0]
-        self.add_to_vocab(new_token)
-
-    def add_to_vocab(self, token):
-        if token not in self.actions:
-            self.actions.append(token)
-            self.action_len = torch.cat(
-                [self.action_len, torch.tensor([len(token)])], dim=0
-            )
-            # Reset the action frequency
-            self.action_frequency = torch.cat(
-                [self.action_frequency * 0, torch.tensor([0.0])], dim=0
-            )
-
-    def remove_from_vocab(self, token):
-        if token in self.actions:
-            idx = self.actions.index(token)
-            self.actions.pop(idx)
-            self.action_len = torch.cat(
-                [self.action_len[:idx], self.action_len[idx + 1 :]], dim=0
-            )
-            self.action_frequency = torch.cat(
-                [self.action_frequency[:idx], self.action_frequency[idx + 1 :]], dim=0
-            )
 
     def state_dict(self):
         state = {

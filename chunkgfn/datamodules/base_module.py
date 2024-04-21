@@ -1,9 +1,15 @@
 from abc import ABC, abstractmethod
 from typing import Any, Optional
+from copy import copy
+import random
 
 import torch
 from lightning import LightningDataModule
 from torch.utils.data import DataLoader, Dataset
+from tokenizers.trainers import BpeTrainer, WordPieceTrainer
+from tokenizers.models import BPE, WordPiece
+from tokenizers.pre_tokenizers import Whitespace
+from tokenizers import Tokenizer
 
 
 class BaseEnvironmentModule(LightningDataModule, ABC):
@@ -33,6 +39,7 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         self.data_val: Optional[Dataset] = None
         self.data_test: Optional[Dataset] = None
         self.persistent_workers = persistent_workers
+        self.exit_action = "<EOS>"
 
     @abstractmethod
     def preprocess_states(self, state: torch.Tensor) -> torch.Tensor:
@@ -151,14 +158,111 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         """
         NotImplementedError
 
-    @abstractmethod
-    def chunk(self, actions: torch.Tensor, dones: torch.Tensor):
+    def _make_action_strings(self, actions, dones):
+        """First removes the exit action and then converts actions indices to strings.
+        Args:
+            actions: Tensor of action indices
+            dones: Tensor of whether the trajectories are done or not.
+        """
+        # Convert token indices to strings
+        dones = dones[:, :-1]  # The last step is always True
+
+        action_strings = [
+            "".join(
+                [
+                    self.actions[act_idx]
+                    for idx, act_idx in enumerate(action)
+                    if not dones[i, idx]
+                ]
+            ).replace(self.exit_action, "")
+            for i, action in enumerate(actions)
+        ]
+
+        return action_strings
+
+    def chunk_uniform(self, n_tokens_to_add: int):
+        """Adds random bigrams to the action space, using current actions."""
+        non_exit_actions = copy(self.actions)
+        non_exit_actions.remove(self.exit_action)
+
+        novel_tokens = set()
+        while len(novel_tokens) < n_tokens_to_add:
+            # Get a bigram.
+            candidate_token = "".join(random.choices(non_exit_actions, k=2))
+            if candidate_token not in non_exit_actions:
+                novel_tokens.add(candidate_token)  # Removes duplicates.
+
+        self.add_to_vocab(list(novel_tokens))
+
+    def chunk_bpe(self, actions: torch.Tensor, dones: torch.Tensor, n_tokens_to_add: int):
         """Find the most valuable subsequence of actions from the corpus.
         Args:
             actions (torch.Tensor[batch_size, traj_length]): Batch of sequence of actions.
             dones (torch.Tensor[batch_size, traj_length]): Batch of sequence of terminations.
         """
-        NotImplementedError
+        action_strings = self._make_action_strings(actions, dones)
+
+        # Apply BPE algorithm to the state_strings and get the most frequent token
+        vocab_dict = {k: i for i, k in enumerate(self.actions)}
+        tokenizer = Tokenizer(BPE(vocab_dict, [], unk_token="[UNK]"))
+        # tokenizer.pre_tokenizer = Whitespace()
+        # vocab size is number of current actions (removing exit), plus n.
+        vocab_size = len(self.actions) - 1 + n_tokens_to_add
+        trainer = BpeTrainer(vocab_size=vocab_size)
+        tokenizer.train_from_iterator(action_strings, trainer=trainer)
+
+        # Sorts the BPE vocab dict by occurance ascending, finds the most useful
+        # novel token.
+        novel_tokens = set(tokenizer.get_vocab().keys()) - set(self.actions)
+        self.add_to_vocab(list(novel_tokens))
+
+    def chunk_wordpiece(self, actions: torch.Tensor, dones: torch.Tensor, n_tokens_to_add: int):
+        """Find the most valuable subsequence of actions from the corpus.
+        Args:
+            actions (torch.Tensor[batch_size, traj_length]): Batch of sequence of actions.
+            dones (torch.Tensor[batch_size, traj_length]): Batch of sequence of terminations.
+        """
+        action_strings = self._make_action_strings(actions, dones)
+
+        # Apply WP algorithm to the state_strings and get the most frequent token
+        vocab_dict = {k: i for i, k in enumerate(self.actions)}
+        tokenizer = Tokenizer(WordPiece(vocab=vocab_dict, unk_token="[UNK]"))
+
+        # vocab size is number of current actions (removing exit), plus n.
+        vocab_size = len(self.actions) - 1 + n_tokens_to_add
+        trainer = WordPieceTrainer(
+            vocab_size=vocab_size,
+            continuing_subword_prefix="",  # No prefix allowed.
+        )
+        tokenizer.train_from_iterator(action_strings, trainer=trainer)
+
+        # Sorts the WP vocab dict by occurance ascending, finds the most useful
+        # novel token.
+        novel_tokens = set(tokenizer.get_vocab().keys()) - set(self.actions)
+        self.add_to_vocab(list(novel_tokens))
+
+    def add_to_vocab(self, tokens: list):
+        assert all([x not in self.actions for x in tokens])
+        self.actions.extend(tokens)
+        self.action_len = torch.cat(
+            [self.action_len, torch.tensor([len(x) for x in tokens])], dim=0
+        )
+        # Reset the action frequency.
+        self.action_frequency = torch.cat(
+            [self.action_frequency * 0, torch.zeros(len(tokens))], dim=0
+        )
+
+    def remove_from_vocab(self, token: str):
+        assert isinstance(token, str)
+        if token in self.actions:
+            idx = self.actions.index(token)
+            self.actions.pop(idx)
+            self.action_len = torch.cat(
+                [self.action_len[:idx], self.action_len[idx + 1 :]], dim=0
+            )
+            self.action_frequency = torch.cat(
+                [self.action_frequency[:idx], self.action_frequency[idx + 1 :]], dim=0
+            )
 
     @abstractmethod
     def get_parent_actions(self, states: torch.Tensor):
