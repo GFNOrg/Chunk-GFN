@@ -1,15 +1,14 @@
-from abc import ABC, abstractmethod
-from typing import Any, Optional
-from copy import copy
 import random
+from abc import ABC, abstractmethod
+from copy import copy
+from typing import Any, Optional
 
 import torch
 from lightning import LightningDataModule
-from torch.utils.data import DataLoader, Dataset
-from tokenizers.trainers import BpeTrainer, WordPieceTrainer
-from tokenizers.models import BPE, WordPiece
-from tokenizers.pre_tokenizers import Whitespace
 from tokenizers import Tokenizer
+from tokenizers.models import BPE, WordPiece
+from tokenizers.trainers import BpeTrainer, WordPieceTrainer
+from torch.utils.data import DataLoader, Dataset
 
 
 class BaseEnvironmentModule(LightningDataModule, ABC):
@@ -194,7 +193,9 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
 
         self.add_to_vocab(list(novel_tokens))
 
-    def chunk_bpe(self, actions: torch.Tensor, dones: torch.Tensor, n_tokens_to_add: int):
+    def chunk_bpe(
+        self, actions: torch.Tensor, dones: torch.Tensor, n_tokens_to_add: int
+    ):
         """Find the most valuable subsequence of actions from the corpus.
         Args:
             actions (torch.Tensor[batch_size, traj_length]): Batch of sequence of actions.
@@ -216,7 +217,9 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         novel_tokens = set(tokenizer.get_vocab().keys()) - set(self.actions)
         self.add_to_vocab(list(novel_tokens))
 
-    def chunk_wordpiece(self, actions: torch.Tensor, dones: torch.Tensor, n_tokens_to_add: int):
+    def chunk_wordpiece(
+        self, actions: torch.Tensor, dones: torch.Tensor, n_tokens_to_add: int
+    ):
         """Find the most valuable subsequence of actions from the corpus.
         Args:
             actions (torch.Tensor[batch_size, traj_length]): Batch of sequence of actions.

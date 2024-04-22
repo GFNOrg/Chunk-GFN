@@ -111,7 +111,7 @@ class RNABindingModule(BaseSequenceModule):
         pin_memory: bool = False,
         **kwargs,
     ) -> None:
-        atomic_tokens = ["<EOS>", "A", "C", "G", "U"]
+        atomic_tokens = ["A", "C", "G", "U"]
 
         self.task = task
         self.modes = []
