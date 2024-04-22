@@ -5,7 +5,7 @@
 
 defaults:
   - override /data: rna_binding.yaml
-  - override /gfn: tb_gfn_variable_prioritized.yaml
+  - override /gfn: tb_gfn_prioritized.yaml
   - override /trainer: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
@@ -38,10 +38,7 @@ gfn:
   replay_buffer:
     cutoff_distance: 3
     capacity: 10000
-  
   reward_temperature: 0.3333
-  n_trajectories: 30
-  library_update_frequency: 75
 
 logger:
   wandb:
