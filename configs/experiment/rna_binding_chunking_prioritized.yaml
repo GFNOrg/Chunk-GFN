@@ -5,7 +5,7 @@
 
 defaults:
   - override /data: rna_binding.yaml
-  - override /gfn: tb_gfn_prioritized.yaml
+  - override /gfn: tb_gfn_variable_prioritized.yaml
   - override /trainer: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
