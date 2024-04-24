@@ -149,17 +149,17 @@ class RNABindingModule(BaseSequenceModule):
         return torch.tensor(min_energies)
 
     def compute_logreward(self, states: torch.Tensor) -> torch.Tensor:
-        """Compute the reward for the given states and action.
+        """Compute the logreward for the given states and action.
         Args:
             states (torch.Tensor[batch_size, max_len, dim]): Batch of states.
         Returns:
-            reward (torch.Tensor[batch_size]): Batch of rewards.
+            logreward (torch.Tensor[batch_size]): Batch of log rewards.
         """
         sequences = [
             s.replace("<EOS>", "") for s in self.to_strings(states)
         ]  # remove <EOS> tokens for computing reward
 
-        rewards = []
+        logrewards = []
         for seq in sequences:
             if len(seq) != self.max_len:
                 raise ValueError(
@@ -173,18 +173,18 @@ class RNABindingModule(BaseSequenceModule):
 
                 # If region not conserved, fitness is 0
                 if seq[start : start + len(pattern)] != pattern:
-                    rewards.append(0)
+                    logrewards.append(0)
                     continue
 
             # Energy is sum of binding energies across all targets
             energies = torch.tensor(
                 [RNA.duplexfold(target, seq).energy for target in self.targets]
             )
-            fitness = (energies / self.norm_values).mean()
+            fitness = (energies / self.norm_values).mean().clip(min=1e-10).log()
 
-            rewards.append(fitness)
+            logrewards.append(fitness)
 
-        return torch.tensor(rewards)
+        return torch.tensor(logrewards)
 
     def compute_metrics(self, states: torch.Tensor) -> dict[str, torch.Tensor]:
         """Compute metrics for the given states.
