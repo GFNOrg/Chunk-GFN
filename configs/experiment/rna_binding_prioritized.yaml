@@ -14,8 +14,8 @@ defaults:
 seed: 42
 
 data:
-  num_train_iterations: 100
-  batch_size: 64
+  num_train_iterations: 25
+  batch_size: 256
   task: L14_RNA1
 
 trainer:

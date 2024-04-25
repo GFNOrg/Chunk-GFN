@@ -25,7 +25,7 @@ epsilon_scheduler:
 
 replay_buffer:
   _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
-  capacity: 2500
+  capacity: 10000
   cutoff_distance: 5
   is_conditional: False
 
@@ -38,6 +38,6 @@ ratio_from_replay_buffer: 0.55 # Ratio of samples from replay buffer
 n_trajectories: 1 # Number of test trajectories to sample
 reward_temperature: 1.0 # Temperature for the reward
 library_update_frequency: 10 # Frequency of updating the library
-n_samples: 1000 # Number of samples to draw from the library
+n_samples: 5000 # Number of samples to draw from the library
 n_chunks: 1 # Number of chunks to add per round
 chunk_algorithm: "uniform" # Algorithm to select chunks, can be either "uniform" or "bpe"
