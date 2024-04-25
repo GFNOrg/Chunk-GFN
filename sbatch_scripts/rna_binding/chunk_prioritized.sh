@@ -4,7 +4,7 @@ tasks=(
     "L100_RNA1,20"
 )
 
-for seed in 1998 2024 42
+for seed in 1998 2024 42 123 5
 do
     for task in "${tasks[@]}" 
     do

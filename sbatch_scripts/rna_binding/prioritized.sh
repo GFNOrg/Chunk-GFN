@@ -4,7 +4,7 @@ tasks=(
     "L100_RNA1,20"
 )
 
-for seed in 1998 2024 42
+for seed in 1998 2024 42 123 5
 do
     for task in "${tasks[@]}" 
     do
@@ -13,7 +13,6 @@ do
         task_name="${fields[0]}"
         cutoff="${fields[1]}"
         cutoff=$((cutoff))
-        
         sbatch sbatch_scripts/rna_binding/template.sh seed=${seed} experiment=rna_binding_prioritized data.task=${task_name} gfn.replay_buffer.cutoff_distance=${cutoff} logger.wandb.name=prioritized_${task_name}
     done
 done
