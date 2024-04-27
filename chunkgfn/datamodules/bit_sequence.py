@@ -26,7 +26,6 @@ class BitSequenceModule(BaseSequenceModule):
         **kwargs,
     ) -> None:
         atomic_tokens = [
-            "<EOS>",
             "0",
             "1",
         ]
