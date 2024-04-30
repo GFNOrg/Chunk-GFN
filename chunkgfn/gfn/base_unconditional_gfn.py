@@ -102,10 +102,11 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
     def go_backward(
         self,
         final_state: torch.Tensor,
-    ):
+    add_logits = None):
         """Sample backward trajectories conditioned on inputs.
         Args:
             final_state (torch.Tensor[batch_size, *state_shape]): Final state.
+            add_logits : this is to add a constant to some logits to privilege the sampling of some actions (e.g. bigger actions)
         Return:
             trajectories (torch.Tensor[batch_size, trajectory_length, *state_shape]): Trajectories for each sample in the batch.
             actions (torch.Tensor[batch_size, trajectory_length]): Actions for each sample in the batch.
@@ -127,6 +128,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             logp_b_s = self.backward_model(
                 self.trainer.datamodule.preprocess_states(state)
             )
+            log_p_bs += add_logits
             logp_b_s = torch.where(
                 backward_actions == 1, logp_b_s, -torch.inf
             ).to(state)

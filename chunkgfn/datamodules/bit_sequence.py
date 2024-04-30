@@ -361,6 +361,7 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
             set(tokenizer.get_vocab().keys()).difference(set(self.actions))
         )[0]
         self.add_to_vocab(new_token)
+        return new_token
 
     def add_to_vocab(self, token):
         if token not in self.actions:
@@ -448,6 +449,7 @@ class BitSequenceModule(BaseUnconditionalEnvironmentModule):
             .long()
         )
         return parent_actions
+    
 
     def build_test(self):
         """Build the test points around the modes.
