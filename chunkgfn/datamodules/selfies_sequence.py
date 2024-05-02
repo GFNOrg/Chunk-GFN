@@ -1,4 +1,8 @@
+import random
+import string
+
 import numpy as np
+import selfies as sf
 import torch
 from rdkit import Chem, RDLogger
 from rdkit.Chem.QED import qed
@@ -7,12 +11,20 @@ from .base_sequence import BaseSequenceModule
 
 RDLogger.DisableLog("rdApp.*")
 
+# fmt: off
+ALPHABET = [
+    '[#N]', '[N+1]', '[Br]', '[NH2+1]', '[NH1]',
+    '[/C]', '[O-1]', '[=Ring1]', '[P]', '[NH1+1]',
+    '[#C]', '[Cl]', '[#Branch2]', '[F]', '[=Branch2]',
+    '[C@H1]', '[C@@H1]', '[#Branch1]', '[S]', '[=N]',
+    '[Ring2]', '[Branch2]', '[O]', '[=O]', '[N]',
+    '[=Branch1]', '[Branch1]', '[Ring1]', '[=C]', '[C]'
+]
+# fmt: on
 
-class SMILESSequenceModule(BaseSequenceModule):
-    """Naive SMILES building environment that constructs SMILES' one letter at a time,
-    with tokens extracted from ZINC-250k dataset. Does not enforce validity in any way,
-    and uses QED (drug-likeness) score as a reward if the SMILES is valid, near-zero
-    otherwise.
+
+class SELFIESSequenceModule(BaseSequenceModule):
+    """SELFIES building environment. Uses QED (drug-likeness) score as a reward.
     """
 
     def __init__(
@@ -23,26 +35,17 @@ class SMILESSequenceModule(BaseSequenceModule):
         sample_exact_length: bool = False,
         num_workers: int = 0,
         pin_memory: bool = False,
-        simple: bool = True,
+        beta: float = 8,
         eps: float = 1e-12,
         **kwargs,
     ) -> None:
-        if simple:
-            # fmt: off
-            atomic_tokens = [
-                "<EOS>", "(", ")", "1", "2", "3", "=", "C", "N", "O"
-            ]
-            # fmt: on
-        else:
-            # fmt: off
-            atomic_tokens = [
-                "<EOS>", "#", "(", ")", "+", "-", "/", "1", "2", "3",
-                "4", "5", "6", "7", "8", "=", "@", "B", "C", "F", "H",
-                "I", "N", "O", "P", "S", "[", "\\", "]", "c", "l", "n",
-                "o", "r", "s"
-            ]
-            # fmt: on
+        atomic_tokens = list(string.ascii_letters)[:len(ALPHABET)]
 
+        self.tokens2symbols = {
+            tok: sym for tok, sym in zip(atomic_tokens, ALPHABET)
+        }
+
+        self.beta = beta
         self.eps = eps
         self.modes = []
         self.len_modes = 0
@@ -58,6 +61,9 @@ class SMILESSequenceModule(BaseSequenceModule):
             **kwargs,
         )
 
+    def _string_to_selfie(self, s: str) -> str:
+        return "".join(self.tokens2symbols[t] for t in s)
+
     def compute_logreward(self, states: torch.Tensor) -> torch.Tensor:
         """Compute the reward for the given states and action.
         Args:
@@ -69,14 +75,13 @@ class SMILESSequenceModule(BaseSequenceModule):
             s.replace("<EOS>", "") for s in self.to_strings(states)
         ]  # remove <EOS> tokens for computing reward
 
-        rewards = []
+        qeds = []
         for s in strings:
-            mol = Chem.MolFromSmiles(s)
-            if mol is None:
-                rewards.append(self.eps)
-            else:
-                rewards.append(qed(mol))
-        return torch.tensor(rewards)
+            selfie = self._string_to_selfie(s)
+            smiles = sf.decoder(selfie)
+            mol = Chem.MolFromSmiles(smiles)
+            qeds.append(qed(mol))
+        return self.beta * torch.tensor(qeds)
 
     def compute_metrics(self, states: torch.Tensor) -> dict[str, torch.Tensor]:
         """Compute metrics for the given states.
@@ -90,15 +95,15 @@ class SMILESSequenceModule(BaseSequenceModule):
         ]  # remove <EOS> tokens
         self.visited.update(set(strings))
 
-        valid_rewards = []
+        qeds = []
         for s in strings:
-            mol = Chem.MolFromSmiles(s)
-            if mol is not None:
-                valid_rewards.append(qed(mol))
+            selfie = self._string_to_selfie(s)
+            smiles = sf.decoder(selfie)
+            mol = Chem.MolFromSmiles(smiles)
+            qeds.append(qed(mol))
 
         metrics = {
-            "num_valid": float(len(valid_rewards)),
-            "avg_valid_reward": np.mean(valid_rewards),
+            "avg_qed": np.mean(qeds),
         }
 
         return metrics
@@ -111,19 +116,16 @@ class SMILESSequenceModule(BaseSequenceModule):
         """
         test_seq = []
 
-        known_molecules = [
-            'CC(=O)OC1=CC=CC=C1C(=O)O',  # aspirin
-            'CC(C)CC1=CC=C(C=C1)C(C)C(=O)O',  # ibuprofen
-            'CN1C2CCC1C(C(C2)OC(=O)C3=CC=CC=C3)C(=O)OC',  # cocaine
-            'C1=CC=C(C=C1)C=O',  # benzaldehyde
-            'CCCC1=CC=C(C=C1)C=O',  # 4-propylbenzaldehyde
-            'CC(=O)C'  # acetone
+        strings = [
+            "".join(random.choices(
+                self.atomic_tokens[1:], k=np.random.randint(5, self.max_len))
+            )
+            for _ in range(1000)
         ]
-        known_molecules = [m for m in known_molecules if len(m) < self.max_len]
 
-        for string in known_molecules:
+        for s in strings:
             s_idx = torch.tensor(
-                [self.atomic_tokens.index(char) for char in string]
+                [self.atomic_tokens.index(char) for char in s]
                 + [self.atomic_tokens.index("<EOS>")]
             )
             s_tensor = torch.zeros(s_idx.shape[0], len(self.atomic_tokens))
