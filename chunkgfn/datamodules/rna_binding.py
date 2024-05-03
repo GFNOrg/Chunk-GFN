@@ -111,6 +111,9 @@ class RNABindingModule(BaseSequenceModule):
         pin_memory: bool = False,
         **kwargs,
     ) -> None:
+        # this line allows to access init params with 'self.hparams' attribute
+        # also ensures init params will be stored in ckpt
+        self.save_hyperparameters(logger=False)
         atomic_tokens = ["A", "C", "G", "U"]
 
         self.task = task

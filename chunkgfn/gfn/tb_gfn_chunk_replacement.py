@@ -13,6 +13,9 @@ from chunkgfn.replay_buffer.utils import extend_trajectories
 from chunkgfn.schedulers import Scheduler
 
 
+from ..constants import NEGATIVE_INFINITY
+
+
 class TBGFN_Chunk_Replacement(UnConditionalSequenceGFN):
     def __init__(
         self,
@@ -55,6 +58,12 @@ class TBGFN_Chunk_Replacement(UnConditionalSequenceGFN):
         for t in range(trajectories.shape[1]):
             state = trajectories[:, t]
             logit_pf = self.get_forward_logits(state)
+            forward_mask = self.trainer.datamodule.get_forward_mask(state)
+            logit_pf = torch.where(
+                forward_mask,
+                logit_pf,
+                torch.tensor(NEGATIVE_INFINITY).to(logit_pf),
+            )
             if t < trajectories.shape[1] - 1:
                 log_pf += (Categorical(logits=logit_pf).log_prob(actions[:, t])) * (
                     ~dones[:, t] + 0
