@@ -9,6 +9,7 @@ from torch.optim.optimizer import Optimizer as Optimizer
 
 from chunkgfn.gfn.base_unconditional_gfn import UnConditionalSequenceGFN
 from chunkgfn.replay_buffer.base_replay_buffer import ReplayBuffer
+from chunkgfn.replay_buffer.utils import extend_trajectories
 from chunkgfn.schedulers import Scheduler
 
 
@@ -83,6 +84,7 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
 
         return loss, logZ
 
+    @torch.no_grad()
     def update_library(self, n):
         """Update the library. This function will do the following, in the following order:
         1. Pick a number of generated samples from the replay buffer.
@@ -94,18 +96,38 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
         """
 
         # Pick a number of generated samples from the replay buffer
-        samples = self.replay_buffer.sample(self.hparams.n_samples)
+        nsamples_replay = int(
+            self.hparams.n_samples * self.hparams.ratio_from_replay_buffer
+        )
+
+        samples = self.replay_buffer.sample(nsamples_replay)
+        trajectories_rb = samples["trajectories"]
+        actions_rb = samples["actions"]
+        dones_rb = samples["dones"]
+        trajectories, actions, dones, _, _ = self.forward(
+            self.hparams.n_samples - nsamples_replay, train=False
+        )
+        # Concatenate samples from the replay buffer and the on-policy samples
+        _, actions, dones = extend_trajectories(
+            trajectories.to(trajectories_rb),
+            trajectories_rb,
+            actions.to(actions_rb),
+            actions_rb,
+            dones.to(dones_rb),
+            dones_rb,
+        )
+
         # Get the most valuable token TODO: make n_tokens_to_add configurable.
         if self.hparams.chunk_algorithm == "bpe":
             self.trainer.datamodule.chunk_bpe(
-                samples["actions"],
-                samples["dones"],
+                actions,
+                dones,
                 n_tokens_to_add=n,
             )
         elif self.hparams.chunk_algorithm == "wordpiece":
             self.trainer.datamodule.chunk_wordpiece(
-                samples["actions"],
-                samples["dones"],
+                actions,
+                dones,
                 n_tokens_to_add=n,
             )
         elif self.hparams.chunk_algorithm == "uniform":
