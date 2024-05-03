@@ -1,11 +1,13 @@
 import random
 import string
+from typing import Tuple
 
 import numpy as np
 import selfies as sf
 import torch
 from rdkit import Chem, RDLogger
 from rdkit.Chem.QED import qed
+from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 
 from .base_sequence import BaseSequenceModule
 
@@ -36,7 +38,7 @@ class SELFIESSequenceModule(BaseSequenceModule):
         num_workers: int = 0,
         pin_memory: bool = False,
         beta: float = 8,
-        eps: float = 1e-12,
+        scaffold_thresholds: Tuple = (0.6, 0.7, 0.8, 0.9),
         **kwargs,
     ) -> None:
         atomic_tokens = list(string.ascii_letters)[:len(ALPHABET)]
@@ -46,7 +48,8 @@ class SELFIESSequenceModule(BaseSequenceModule):
         }
 
         self.beta = beta
-        self.eps = eps
+        self.min_threshold = min(scaffold_thresholds)
+        self.discovered_scaffolds = {k: set() for k in scaffold_thresholds}
         self.modes = []
         self.len_modes = 0
 
@@ -100,11 +103,22 @@ class SELFIESSequenceModule(BaseSequenceModule):
             selfie = self._string_to_selfie(s)
             smiles = sf.decoder(selfie)
             mol = Chem.MolFromSmiles(smiles)
-            qeds.append(qed(mol))
+            q = qed(mol)
+            qeds.append(q)
+
+            if q >= self.min_threshold:
+                scaffold = MurckoScaffoldSmiles(smiles)
+                for th in self.discovered_scaffolds.keys():
+                    if q >= th:
+                        self.discovered_scaffolds[th].add(scaffold)
 
         metrics = {
             "avg_qed": np.mean(qeds),
+            "min_qed": np.min(qeds),
+            "max_qed": np.max(qeds),
         }
+        for th, scaffolds in self.discovered_scaffolds.items():
+            metrics[f"scaffolds_above_qed_{th}"] = len(scaffolds)
 
         return metrics
 
