@@ -110,6 +110,19 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             }
         return {"optimizer": optimizer}
 
+    @torch.no_grad()
+    def refactor_replay_buffer(self):
+        """Refactor the replay buffer. This function takes final states from the replay
+        buffer and samples backward trajectories for them to get different trajctories
+        based on the current library.
+        """
+        if self.replay_buffer is not None:
+            final_state = self.replay_buffer.storage["final_state"]
+            trajectories, actions, dones, _ = self.go_backward(final_state)
+            self.replay_buffer.storage["trajectories"] = trajectories
+            self.replay_buffer.storage["actions"] = actions
+            self.replay_buffer.storage["dones"] = dones
+
     def get_library_embeddings(self):
         """Produce embedding for all actions in the library.
         Returns:
@@ -230,7 +243,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         done = torch.zeros((bs)).to(state).bool()
         trajectory_length = (
             torch.zeros((bs)).to(state).long()
-        )  # This tracks the length of trajetcory for each sample in the batch
+        )  # This tracks the length of trajectory for each sample in the batch
 
         while not done.all():
             logit_pf = self.get_forward_logits(state)

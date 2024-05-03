@@ -179,7 +179,7 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
 
         return action_strings
 
-    def chunk_uniform(self, n_tokens_to_add: int):
+    def chunk_uniform(self, n_tokens_to_add: int, remove_old: bool = False):
         """Adds random bigrams to the action space, using current actions."""
         non_exit_actions = copy(self.actions)
         non_exit_actions.remove(self.exit_action)
@@ -191,15 +191,23 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
             if candidate_token not in non_exit_actions:
                 novel_tokens.add(candidate_token)  # Removes duplicates.
 
+        old_tokens = set(self.actions) - set(self.atomic_tokens)
+        if remove_old:
+            self.remove_from_vocab(list(old_tokens))
         self.add_to_vocab(list(novel_tokens))
 
     def chunk_bpe(
-        self, actions: torch.Tensor, dones: torch.Tensor, n_tokens_to_add: int
+        self,
+        actions: torch.Tensor,
+        dones: torch.Tensor,
+        n_tokens_to_add: int,
+        remove_old: bool = False,
     ):
         """Find the most valuable subsequence of actions from the corpus.
         Args:
             actions (torch.Tensor[batch_size, traj_length]): Batch of sequence of actions.
             dones (torch.Tensor[batch_size, traj_length]): Batch of sequence of terminations.
+            remove_old (bool): Removes older new tokens from the library.
         """
         action_strings = self._make_action_strings(actions, dones)
 
@@ -214,11 +222,26 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
 
         # Sorts the BPE vocab dict by occurance ascending, finds the most useful
         # novel token.
-        novel_tokens = set(tokenizer.get_vocab().keys()) - set(self.actions)
+        old_tokens = set(self.actions) - set(self.atomic_tokens)
+        novel_tokens = [
+            action
+            for action in tokenizer.get_vocab().keys()
+            if action not in self.actions
+        ]
+
+        novel_tokens = set(
+            novel_tokens[-n_tokens_to_add:]
+        )  # This makes sure we don't more tokens that intended
         self.add_to_vocab(list(novel_tokens))
+        if remove_old:
+            self.remove_from_vocab(list(old_tokens))
 
     def chunk_wordpiece(
-        self, actions: torch.Tensor, dones: torch.Tensor, n_tokens_to_add: int
+        self,
+        actions: torch.Tensor,
+        dones: torch.Tensor,
+        n_tokens_to_add: int,
+        remove_old: bool = False,
     ):
         """Find the most valuable subsequence of actions from the corpus.
         Args:
@@ -239,12 +262,21 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         )
         tokenizer.train_from_iterator(action_strings, trainer=trainer)
 
-        # Sorts the WP vocab dict by occurance ascending, finds the most useful
-        # novel token.
-        novel_tokens = set(tokenizer.get_vocab().keys()) - set(self.actions)
-        self.add_to_vocab(list(novel_tokens))
+        old_tokens = set(self.actions) - set(self.atomic_tokens)
+        novel_tokens = [
+            action
+            for action in tokenizer.get_vocab().keys()
+            if action not in self.actions
+        ]
 
-    def add_to_vocab(self, tokens: list):
+        novel_tokens = set(
+            novel_tokens[-n_tokens_to_add:]
+        )  # This makes sure we don't more tokens that intended
+        self.add_to_vocab(list(novel_tokens))
+        if remove_old:
+            self.remove_from_vocab(list(old_tokens))
+
+    def add_to_vocab(self, tokens: list[str]):
         assert all([x not in self.actions for x in tokens])
         self.actions.extend(tokens)
         self.action_len = torch.cat(
@@ -255,9 +287,9 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
             [self.action_frequency * 0, torch.zeros(len(tokens))], dim=0
         )
 
-    def remove_from_vocab(self, token: str):
-        assert isinstance(token, str)
-        if token in self.actions:
+    def remove_from_vocab(self, tokens: list[str]):
+        assert all([x in self.actions for x in tokens])
+        for token in tokens:
             idx = self.actions.index(token)
             self.actions.pop(idx)
             self.action_len = torch.cat(

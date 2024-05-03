@@ -28,8 +28,7 @@ class SequenceDataset(Dataset):
 
 
 class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
-    """Base Sequence module that can be inherited from for specific tasks.
-    """
+    """Base Sequence module that can be inherited from for specific tasks."""
 
     def __init__(
         self,
@@ -55,7 +54,9 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
         # Environment variables
         self.discovered_modes = set()  # Tracks the number of modes we discovered
         self.visited = set()  # Tracks the number of states we visited
-        self.atomic_tokens = [self.exit_action] + atomic_tokens  # Atomic tokens for representing the states. Stays fixed during training.
+        self.atomic_tokens = (
+            [self.exit_action] + atomic_tokens
+        )  # Atomic tokens for representing the states. Stays fixed during training.
         self.s0 = -torch.ones(
             1 + self.max_len, len(self.atomic_tokens)
         )  # Initial state
