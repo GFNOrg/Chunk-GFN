@@ -7,13 +7,9 @@ import torch
 from lightning import LightningDataModule
 from tokenizers import Tokenizer
 from tokenizers.models import BPE, WordPiece
+from tokenizers.pre_tokenizers import Whitespace
 from tokenizers.trainers import BpeTrainer, WordPieceTrainer
 from torch.utils.data import DataLoader, Dataset
-
-
-class BaseEnvironmentModule(LightningDataModule, ABC):
-    """A `BaseEnvironmentModule` for defining environment datamodules."""
-
     def __init__(
         self,
         batch_size: int = 64,
@@ -34,6 +30,7 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         self.data_val: Optional[Dataset] = None
         self.data_test: Optional[Dataset] = None
         self.persistent_workers = persistent_workers
+        self.exit_action = "<EOS>"
         self.exit_action = "<EOS>"
 
     @abstractmethod

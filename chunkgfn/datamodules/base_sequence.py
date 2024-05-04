@@ -82,6 +82,7 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
         for action in self.actions:
             idx = self.actions.index(action)
             if action == self.exit_action:
+                if action == self.exit_action:
                 one_hot_action_tensor[idx, :1] = torch.eye(len(self.atomic_tokens))[
                     self.atomic_tokens.index(action)
                 ]
@@ -238,6 +239,7 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
         actions_mask = len_tokens_to_go.unsqueeze(1) > self.action_len.to(
             states.device
         ).unsqueeze(0)  # Only use actions that can fit in the state
+        eos_token_idx = self.atomic_tokens.index(self.exit_action)
         eos_token_idx = self.atomic_tokens.index(self.exit_action)
         if self.sample_exact_length:
             # Don't allow the EOS token to be sampled if the state is not full

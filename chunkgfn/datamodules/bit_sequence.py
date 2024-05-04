@@ -29,6 +29,7 @@ class BitSequenceModule(BaseSequenceModule):
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(logger=False)
         atomic_tokens = [
+            # "<EOS>",  # Removed because it's appended in BaseSequenceModule.
             "0",
             "1",
         ]
