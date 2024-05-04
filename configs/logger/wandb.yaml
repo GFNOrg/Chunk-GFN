@@ -5,7 +5,7 @@ wandb:
   name: ${oc.env:SLURM_JOB_NAME}_${oc.env:SLURM_JOB_ID}
   save_dir: "${paths.output_dir}"
   offline: False
-  id: null # pass correct id to resume experiment!
+  id: ${oc.env:SLURM_JOB_ID} # pass correct id to resume experiment!
   anonymous: null # enable anonymous logging
   project: "gfn-chunking"
   log_model: False # upload lightning ckpts
@@ -14,3 +14,4 @@ wandb:
   group: ""
   tags: []
   job_type: ""
+  resume: allow # This allows resuming when the job is requeued
