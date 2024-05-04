@@ -396,18 +396,23 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
 
     def log_action_histogram(self):
         """Log the action histogram."""
-        fig, ax = plt.subplots(figsize=(10, 5))
-        freq = (
-            self.trainer.datamodule.action_frequency
-            / self.trainer.datamodule.action_frequency.sum()
+        normalizing_constant = self.trainer.datamodule.action_frequency.sum()
+        action_frequency = [
+            [freq / normalizing_constant, action]
+            for (freq, action) in zip(
+                self.trainer.datamodule.action_frequency,
+                self.trainer.datamodule.actions,
+            )
+        ]
+        table = wandb.Table(data=action_frequency, columns=["frequency", "action"])
+
+        self.logger.log_metrics(
+            {
+                "action_histogram": wandb.plot.bar(
+                    table, "action", "frequency", title="Action Frequency"
+                )
+            }
         )
-        ax.bar(self.trainer.datamodule.actions, freq)
-        ax.set_xlabel("Actions")
-        ax.set_ylabel("Frequency")
-        ax.set_title("Action Frequency Histogram")
-        plt.xticks(rotation=90)
-        self.logger.log_metrics({"action_histogram": wandb.Image(fig)})
-        plt.close(fig)
 
     def training_step(self, train_batch, batch_idx) -> Any:
         if self.epsilon_scheduler is not None:
@@ -515,6 +520,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             on_epoch=True,
             prog_bar=True,
         )
+        self.log_action_histogram()
 
         for metric_name in additional_metrics:
             self.log(
