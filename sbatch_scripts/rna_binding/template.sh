@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --partition=long
-#SBATCH --cpus-per-task=6
+#SBATCH --cpus-per-task=3
 #SBATCH --gres=gpu:rtx8000:1
-#SBATCH --mem=48G
+#SBATCH --mem=18G
 #SBATCH --time=48:00:00
 #SBATCH -o /network/scratch/o/oussama.boussif/slurm-%j.out
 

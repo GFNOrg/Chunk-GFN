@@ -13,6 +13,6 @@ do
         task_name="${fields[0]}"
         cutoff="${fields[1]}"
         cutoff=$((cutoff))
-        sbatch sbatch_scripts/rna_binding/template.sh seed=${seed} experiment=rna_binding_chunking_prioritized data.task=${task_name} gfn.replay_buffer.cutoff_distance=${cutoff} logger.wandb.name=chunk_prioritized_${task_name}
+        sbatch sbatch_scripts/rna_binding/template.sh seed=${seed} experiment=rna_binding_chunk_replacement_prioritized data.task=${task_name} gfn.replay_buffer.cutoff_distance=${cutoff} logger.wandb.name=chunkreplacement_prioritized_${task_name}
     done
 done
