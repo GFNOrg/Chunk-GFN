@@ -82,7 +82,6 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
         for action in self.actions:
             idx = self.actions.index(action)
             if action == self.exit_action:
-                if action == self.exit_action:
                 one_hot_action_tensor[idx, :1] = torch.eye(len(self.atomic_tokens))[
                     self.atomic_tokens.index(action)
                 ]
