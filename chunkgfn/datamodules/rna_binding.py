@@ -96,12 +96,6 @@ def registry():
 
 
 class RNABindingModule(BaseSequenceModule):
-    """Naive SMILES building environment that constructs SMILES' one letter at a time,
-    with tokens extracted from ZINC-250k dataset. Does not enforce validity in any way,
-    and uses QED (drug-likeness) score as a reward if the SMILES is valid, near-zero
-    otherwise.
-    """
-
     def __init__(
         self,
         num_train_iterations: int,

@@ -12,7 +12,6 @@ from chunkgfn.replay_buffer.base_replay_buffer import ReplayBuffer
 from chunkgfn.replay_buffer.utils import extend_trajectories
 from chunkgfn.schedulers import Scheduler
 
-
 from ..constants import NEGATIVE_INFINITY
 
 

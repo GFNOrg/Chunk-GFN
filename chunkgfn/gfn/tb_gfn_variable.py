@@ -152,7 +152,6 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
             and batch_idx == 0
         ):
             self.update_library(n=self.hparams.n_chunks)
-            self.update_library(n=self.hparams.n_chunks)
 
         else:
             opt = self.optimizers()
