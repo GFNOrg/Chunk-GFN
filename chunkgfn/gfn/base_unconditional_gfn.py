@@ -110,6 +110,19 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             }
         return {"optimizer": optimizer}
 
+    @torch.no_grad()
+    def refactor_replay_buffer(self):
+        """Refactor the replay buffer. This function takes final states from the replay
+        buffer and samples backward trajectories for them to get different trajctories
+        based on the current library.
+        """
+        if self.replay_buffer is not None:
+            final_state = self.replay_buffer.storage["final_state"]
+            trajectories, actions, dones, _ = self.go_backward(final_state)
+            self.replay_buffer.storage["trajectories"] = trajectories
+            self.replay_buffer.storage["actions"] = actions
+            self.replay_buffer.storage["dones"] = dones
+
     def get_library_embeddings(self):
         """Produce embedding for all actions in the library.
         Returns:
@@ -230,7 +243,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         done = torch.zeros((bs)).to(state).bool()
         trajectory_length = (
             torch.zeros((bs)).to(state).long()
-        )  # This tracks the length of trajetcory for each sample in the batch
+        )  # This tracks the length of trajectory for each sample in the batch
 
         while not done.all():
             logit_pf = self.get_forward_logits(state)
@@ -383,18 +396,23 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
 
     def log_action_histogram(self):
         """Log the action histogram."""
-        fig, ax = plt.subplots(figsize=(10, 5))
-        freq = (
-            self.trainer.datamodule.action_frequency
-            / self.trainer.datamodule.action_frequency.sum()
+        normalizing_constant = self.trainer.datamodule.action_frequency.sum()
+        action_frequency = [
+            [freq / normalizing_constant, action]
+            for (freq, action) in zip(
+                self.trainer.datamodule.action_frequency,
+                self.trainer.datamodule.actions,
+            )
+        ]
+        table = wandb.Table(data=action_frequency, columns=["frequency", "action"])
+
+        self.logger.log_metrics(
+            {
+                "action_histogram": wandb.plot.bar(
+                    table, "action", "frequency", title="Action Frequency"
+                )
+            }
         )
-        ax.bar(self.trainer.datamodule.actions, freq)
-        ax.set_xlabel("Actions")
-        ax.set_ylabel("Frequency")
-        ax.set_title("Action Frequency Histogram")
-        plt.xticks(rotation=90)
-        self.logger.log_metrics({"action_histogram": wandb.Image(fig)})
-        plt.close(fig)
 
     def training_step(self, train_batch, batch_idx) -> Any:
         if self.epsilon_scheduler is not None:
@@ -503,6 +521,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             prog_bar=True,
         )
         self.log_action_histogram()
+
         for metric_name in additional_metrics:
             self.log(
                 f"train/{metric_name}",

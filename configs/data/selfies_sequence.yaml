@@ -1,4 +1,4 @@
-_target_: chunkgfn.datamodules.smiles_sequence.SMILESSequenceModule
+_target_: chunkgfn.datamodules.selfies_sequence.SELFIESSequenceModule
 
 max_len: 32
 num_train_iterations: 100
@@ -7,4 +7,3 @@ batch_size: 64
 num_workers: 0
 pin_memory: True
 persistent_workers: False
-simple: True

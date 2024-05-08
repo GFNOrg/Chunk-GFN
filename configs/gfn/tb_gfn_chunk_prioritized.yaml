@@ -9,6 +9,7 @@ scheduler: null
 
 forward_model: null
 
+
 backward_model: null
 
 action_model:
@@ -24,10 +25,10 @@ epsilon_scheduler:
   max_epochs: ${trainer.max_epochs}
 
 replay_buffer:
-  _target_: chunkgfn.replay_buffer.random_replay.RandomReplay
-  capacity: 2500
+  _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
+  capacity: 10000
+  cutoff_distance: 5
   is_conditional: False
-  reward_sampling: False
 
 
 forward_lr: 1e-4
@@ -36,9 +37,8 @@ action_lr: 1e-4
 monitor: val/logreward
 ratio_from_replay_buffer: 0.55 # Ratio of samples from replay buffer
 n_trajectories: 1 # Number of test trajectories to sample
-reward_temperature: 1.0 # Temperature for the reward
-library_update_frequency: 10 # Frequency of updating the library
-n_samples: 1000 # Number of samples to draw from the library
-weight_initialization: average # Weight initialization for the the new token
+reward_temperature: 0.3333 # Temperature for the reward
+library_update_frequency: 75 # Frequency of updating the library
+n_samples: 10000 # Number of samples to draw from the library
 n_chunks: 1 # Number of chunks to add per round
-chunk_algorithm: "uniform" # Algorithm to select chunks, can only be one of ["uniform", "wordpiece", "bpe"]
+chunk_algorithm: "bpe" # Algorithm to select chunks, can be either "uniform" or "bpe"

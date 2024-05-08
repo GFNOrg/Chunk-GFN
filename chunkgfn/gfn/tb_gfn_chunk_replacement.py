@@ -7,17 +7,20 @@ from torch.distributions import Categorical
 from torch.optim import lr_scheduler as lr_scheduler
 from torch.optim.optimizer import Optimizer as Optimizer
 
-from chunkgfn.gfn.base_conditional_gfn import ConditionalSequenceGFN
-from chunkgfn.replay_buffer import ReplayBuffer
+from chunkgfn.gfn.base_unconditional_gfn import UnConditionalSequenceGFN
+from chunkgfn.replay_buffer.base_replay_buffer import ReplayBuffer
+from chunkgfn.replay_buffer.utils import extend_trajectories
 from chunkgfn.schedulers import Scheduler
 
+from ..constants import NEGATIVE_INFINITY
 
-class Cond_TBGFN_Variable(ConditionalSequenceGFN):
+
+class TBGFN_Chunk_Replacement(UnConditionalSequenceGFN):
     def __init__(
         self,
         forward_model: nn.Module,
         backward_model: nn.Module,
-        partition_model: nn.Module,
+        action_model: torch.nn.Module,
         optimizer: Optimizer,
         scheduler: Any,
         epsilon_scheduler: Scheduler | None = None,
@@ -28,7 +31,7 @@ class Cond_TBGFN_Variable(ConditionalSequenceGFN):
         super().__init__(
             forward_model,
             backward_model,
-            partition_model,
+            action_model,
             optimizer,
             scheduler,
             epsilon_scheduler,
@@ -38,66 +41,10 @@ class Cond_TBGFN_Variable(ConditionalSequenceGFN):
         )
         self.automatic_optimization = False
 
-    def go_backward(
-        self,
-        x: torch.Tensor,
-        final_state: torch.Tensor,
-    ):
-        """Sample backward trajectories conditioned on inputs.
-        Args:
-            x (torch.Tensor[batch_size, seq_length, input_dim]): Conditioning vector.
-            final_state (torch.Tensor[batch_size, seq_length, input_dim]): Final state.
-        Return:
-            trajectories (torch.Tensor[batch_size, trajectory_length, seq_length, state_dim]): Trajectories for each sample in the batch.
-            actions (torch.Tensor[batch_size, trajectory_length]): Actions for each sample in the batch.
-            dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
-            state (torch.Tensor[batch_size, seq_length, state_dim]): Final state.
-        """
-        bs, max_len, dim = x.shape
-        eos_token_idx = self.trainer.datamodule.data_train.eos_token_idx
-        state = final_state.clone()
-        eos_token = torch.zeros(dim).to(x)
-        eos_token[eos_token_idx] = 1
-        done = torch.ones((bs)).to(x).bool()
-
-        # Start unrolling the trajectories
-        actions = []
-        trajectories = []
-        dones = []
-        dones.append(torch.ones((bs)).to(x).bool())
-
-        for t in range(max_len):
-            backward_actions = self.trainer.datamodule.get_parent_actions(state)
-            logp_b_s = torch.where(
-                backward_actions == 1,
-                self.trainer.datamodule.data_train.action_len[backward_actions] - 1,
-                -torch.inf,
-            ).to(state)
-            cat = Categorical(logits=logp_b_s)
-
-            act = cat.sample()
-
-            new_state, done = self.trainer.datamodule.backward_step(state, act)
-
-            actions.append(act)
-            trajectories.append(state)
-            dones.append(done.clone())
-
-            state = new_state.clone()
-
-        trajectories.append(state)
-
-        trajectories = torch.stack(trajectories[::-1], dim=1)
-        actions = torch.stack(actions[::-1], dim=1)
-        dones = torch.stack(dones[::-1], dim=1)
-
-        return trajectories, actions, dones, final_state
-
-    def compute_loss(self, x, trajectories, actions, dones, logreward):
+    def compute_loss(self, trajectories, actions, dones, logreward):
         """Compute the loss for the model.
         Args:
-            x (torch.Tensor[batch_size, seq_length, input_dim]): Conditioning vector.
-            trajectories (torch.Tensor[batch_size, trajectory_length, seq_length, state_dim]): Trajectories for each sample in the batch.
+            trajectories (torch.Tensor[batch_size, trajectory_length, *state_shape]): Trajectories for each sample in the batch.
             actions (torch.Tensor[batch_size, trajectory_length]): Actions for each sample in the batch.
             dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
             logreward (torch.Tensor[batch_size]): Log reward.
@@ -109,23 +56,36 @@ class Cond_TBGFN_Variable(ConditionalSequenceGFN):
         log_pb = 0
         for t in range(trajectories.shape[1]):
             state = trajectories[:, t]
-            logp_f_s = self.forward_model(x, state)
+            logit_pf = self.get_forward_logits(state)
+            forward_mask = self.trainer.datamodule.get_forward_mask(state)
+            logit_pf = torch.where(
+                forward_mask,
+                logit_pf,
+                torch.tensor(NEGATIVE_INFINITY).to(logit_pf),
+            )
             if t < trajectories.shape[1] - 1:
-                log_pf += (Categorical(logits=logp_f_s).log_prob(actions[:, t])) * (
+                log_pf += (Categorical(logits=logit_pf).log_prob(actions[:, t])) * (
                     ~dones[:, t] + 0
                 )
             if t > 0:
                 backward_actions = self.trainer.datamodule.get_parent_actions(state)
                 logp_b_s = torch.where(
                     backward_actions == 1, torch.tensor(0.0), -torch.inf
-                ).to(logp_f_s)
+                ).to(logit_pf)
+                # When no action is available, just fill with uniform because it won't be picked anyway in the backward_step. Doing this avoids having nan when computing probabilities
+                logp_b_s = torch.where(
+                    (logp_b_s == -torch.inf).all(dim=-1).unsqueeze(1),
+                    torch.tensor(0.0),
+                    logp_b_s,
+                )
                 log_pb += torch.where(
                     dones[:, t] | self.trainer.datamodule.is_initial_state(state),
                     torch.tensor(0.0),
                     Categorical(logits=logp_b_s).log_prob(actions[:, t - 1]),
                 )
 
-        logZ = self.partition_model(x).squeeze(-1)
+        logZ = self.logZ
+
         loss = F.mse_loss(
             logZ + log_pf, (logreward / self.hparams.reward_temperature) + log_pb
         )
@@ -141,9 +101,40 @@ class Cond_TBGFN_Variable(ConditionalSequenceGFN):
         """
 
         # Pick a number of generated samples from the replay buffer
-        samples = self.replay_buffer.sample(self.hparams.n_samples)
-        # Get the most valuable token
-        self.trainer.datamodule.chunk(samples["actions"], samples["dones"])
+        nsamples_replay = int(
+            self.hparams.n_samples * self.hparams.ratio_from_replay_buffer
+        )
+
+        samples = self.replay_buffer.sample(nsamples_replay)
+        trajectories_rb = samples["trajectories"]
+        actions_rb = samples["actions"]
+        dones_rb = samples["dones"]
+        trajectories, actions, dones, _, _ = self.forward(
+            self.hparams.n_samples - nsamples_replay, train=False
+        )
+        # Concatenate samples from the replay buffer and the on-policy samples
+        _, actions, dones = extend_trajectories(
+            trajectories.to(trajectories_rb),
+            trajectories_rb,
+            actions.to(actions_rb),
+            actions_rb,
+            dones.to(dones_rb),
+            dones_rb,
+        )
+
+        n = self.hparams.total_library_size - len(self.trainer.datamodule.atomic_tokens)
+        if self.hparams.chunk_algorithm == "bpe":
+            self.trainer.datamodule.chunk_bpe(
+                samples["actions"], samples["dones"], n_tokens_to_add=n, remove_old=True
+            )
+        elif self.hparams.chunk_algorithm == "wordpiece":
+            self.trainer.datamodule.chunk_wordpiece(
+                samples["actions"], samples["dones"], n_tokens_to_add=n, remove_old=True
+            )
+        elif self.hparams.chunk_algorithm == "uniform":
+            self.trainer.datamodule.chunk_uniform(n_tokens_to_add=n, remove_old=True)
+        else:
+            raise Exception("chunk_algorithm not in ['bpe', 'wordpiece', 'uniform']")
 
     def training_step(self, train_batch, batch_idx) -> Any:
         loss = super().training_step(train_batch, batch_idx)
@@ -154,7 +145,7 @@ class Cond_TBGFN_Variable(ConditionalSequenceGFN):
             and batch_idx == 0
         ):
             self.update_library()
-
+            self.refactor_replay_buffer()
         else:
             opt = self.optimizers()
             opt.zero_grad()

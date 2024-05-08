@@ -4,6 +4,8 @@ from torch.distributions import Categorical
 
 from chunkgfn.gfn.base_unconditional_gfn import UnConditionalSequenceGFN
 
+from ..constants import NEGATIVE_INFINITY
+
 
 class TBGFN(UnConditionalSequenceGFN):
     def compute_loss(self, trajectories, actions, dones, logreward):
@@ -22,6 +24,12 @@ class TBGFN(UnConditionalSequenceGFN):
         for t in range(trajectories.shape[1]):
             state = trajectories[:, t]
             logit_pf = self.get_forward_logits(state)
+            forward_mask = self.trainer.datamodule.get_forward_mask(state)
+            logit_pf = torch.where(
+                forward_mask,
+                logit_pf,
+                torch.tensor(NEGATIVE_INFINITY).to(logit_pf),
+            )
             if t < trajectories.shape[1] - 1:
                 log_pf += (Categorical(logits=logit_pf).log_prob(actions[:, t])) * (
                     ~dones[:, t] + 0
@@ -39,11 +47,12 @@ class TBGFN(UnConditionalSequenceGFN):
                 )
                 log_pb += torch.where(
                     dones[:, t] | self.trainer.datamodule.is_initial_state(state),
-                    torch.tensor(0.0).to(logp_b_s.device),
+                    torch.tensor(0.0),
                     Categorical(logits=logp_b_s).log_prob(actions[:, t - 1]),
                 )
 
         logZ = self.logZ
+
         loss = F.mse_loss(
             logZ + log_pf, (logreward / self.hparams.reward_temperature) + log_pb
         )

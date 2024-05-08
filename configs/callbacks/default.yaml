@@ -13,10 +13,7 @@ model_checkpoint:
   save_last: True
   auto_insert_metric_name: False
 
-early_stopping:
-  monitor: "train/logreward"
-  patience: 10000
-  mode: "max"
+early_stopping: null
 
 model_summary:
   max_depth: -1
