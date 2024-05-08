@@ -1,4 +1,4 @@
-_target_: chunkgfn.gfn.tb_gfn_chunk_replacement.TBGFN_Chunk_Replacement
+_target_: chunkgfn.gfn.tb_gfn_variable.TBGFN_Variable
 
 optimizer:
   _target_: torch.optim.Adam
@@ -8,6 +8,7 @@ optimizer:
 scheduler: null
 
 forward_model: null
+
 
 backward_model: null
 
@@ -24,10 +25,10 @@ epsilon_scheduler:
   max_epochs: ${trainer.max_epochs}
 
 replay_buffer:
-  _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
+  _target_: chunkgfn.replay_buffer.random_replay.RandomReplay
   capacity: 10000
-  cutoff_distance: 5
   is_conditional: False
+  reward_sampling: False
 
 
 forward_lr: 1e-4
@@ -36,8 +37,8 @@ action_lr: 1e-4
 monitor: val/logreward
 ratio_from_replay_buffer: 0.55 # Ratio of samples from replay buffer
 n_trajectories: 1 # Number of test trajectories to sample
-reward_temperature: 0.3333 # Temperature for the reward
-library_update_frequency: 10 # Frequency of updating the library
+reward_temperature: 0.33333 # Temperature for the reward
+library_update_frequency: 75 # Frequency of updating the library
 n_samples: 10000 # Number of samples to draw from the library
-total_library_size: 20 # The size of the library
+n_chunks: 1 # Number of chunks to add per round
 chunk_algorithm: "bpe" # Algorithm to select chunks, can be either "uniform" or "bpe"

@@ -5,7 +5,7 @@
 
 defaults:
   - override /data: bit_sequence.yaml
-  - override /gfn: tb_gfn_variable_prioritized.yaml
+  - override /gfn: tb_gfn_chunk_prioritized.yaml
   - override /trainer: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
@@ -46,7 +46,7 @@ gfn:
   
   reward_temperature: 0.3333
   library_update_frequency: 75 # Frequency of updating the library
-  n_samples: 1000 # Number of samples to draw from the library
+  n_samples: 10000 # Number of samples to draw from the library
   n_trajectories: 30
 
 logger:

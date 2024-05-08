@@ -5,7 +5,7 @@
 
 defaults:
   - override /data: selfies_sequence.yaml
-  - override /gfn: tb_gfn_prioritized.yaml
+  - override /gfn: tb_gfn_chunk_replacement_prioritized.yaml
   - override /trainer: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
@@ -15,13 +15,13 @@ seed: 42
 
 data:
   max_len: 10
-  num_train_iterations: 100
+  num_train_iterations: 25
   sample_exact_length: False
-  batch_size: 64
-  beta: 8.0
-
+  batch_size: 256
+  
 trainer:
   max_epochs: 1500
+  check_val_every_n_epoch: 20
 
 gfn:
   forward_model:
@@ -40,7 +40,13 @@ gfn:
   replay_buffer:
     cutoff_distance: 3
     capacity: 10000
+
   reward_temperature: 0.3333
+  library_update_frequency: 75 # Frequency of updating the library
+  n_samples: 10000 # Number of samples to draw from the library
+  n_trajectories: 30
+  total_library_size: 50 # The size of the library
+
 
   forward_lr: 1e-3
   partition_lr: 1e-2

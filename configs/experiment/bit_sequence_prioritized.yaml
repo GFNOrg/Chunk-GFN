@@ -24,6 +24,7 @@ data:
 
 trainer:
   max_epochs: 1500
+  check_val_every_n_epoch: 20
 
 gfn:
   forward_model:
