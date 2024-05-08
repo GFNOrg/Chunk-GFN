@@ -95,6 +95,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         pin_memory: bool = False,
         **kwargs,
     ) -> None:
+        self.save_hyperparameters(logger=False)
         super().__init__(
             num_train_iterations,
             batch_size,
