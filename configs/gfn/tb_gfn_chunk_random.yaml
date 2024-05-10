@@ -41,4 +41,4 @@ reward_temperature: 0.33333 # Temperature for the reward
 library_update_frequency: 75 # Frequency of updating the library
 n_samples: 10000 # Number of samples to draw from the library
 n_chunks: 1 # Number of chunks to add per round
-chunk_algorithm: "bpe" # Algorithm to select chunks, can be either "uniform" or "bpe"
+chunk_algorithm: "uniform" # Algorithm to select chunks, can only be one of ["uniform", "wordpiece", "bpe"]
