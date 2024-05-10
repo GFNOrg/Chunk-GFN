@@ -1,3 +1,5 @@
+import pickle
+
 import RNA
 import torch
 
@@ -101,6 +103,7 @@ class RNABindingModule(BaseSequenceModule):
         num_train_iterations: int,
         batch_size: int = 64,
         task: str = "L14_RNA1",
+        modes_path: str | None = None,
         num_workers: int = 0,
         pin_memory: bool = False,
         **kwargs,
@@ -120,7 +123,9 @@ class RNABindingModule(BaseSequenceModule):
         self.conserved_region = (
             params["conserved_region"] if "conserved_region" in params else None
         )
-
+        if modes_path is not None:
+            with open(modes_path, "rb") as f:
+                self.modes = pickle.load(f)
         super().__init__(
             atomic_tokens=atomic_tokens,
             max_len=params["seq_length"],
@@ -194,9 +199,14 @@ class RNABindingModule(BaseSequenceModule):
             s.replace("<EOS>", "") for s in self.to_strings(states)
         ]  # remove <EOS> tokens
         self.visited.update(set(strings))
+        if hasattr(self, "modes"):
+            unique_strings = set(strings)
+            modes_found = unique_strings.intersection(self.modes)
+            self.discovered_modes.update(modes_found)
 
         metrics = {
             "num_visited": float(len(self.visited)),
+            "num_modes": float(len(self.discovered_modes)),
         }
 
         return metrics
