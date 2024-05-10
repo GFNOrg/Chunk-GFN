@@ -6,3 +6,4 @@ num_workers: 0
 pin_memory: True
 persistent_workers: False
 task: L14_RNA1
+modes_path: /home/mila/o/oussama.boussif/Chunk-GFN/L14_RNA1_modes.pkl
