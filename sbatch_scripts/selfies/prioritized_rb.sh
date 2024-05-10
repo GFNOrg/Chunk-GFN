@@ -25,6 +25,7 @@ do
 
             if [[ $algo == *"chunk"* ]]; then
                 sbatch sbatch_scripts/selfies/selfies.sh \
+                logger=wandb_offline \
                 experiment=${algo} \
                 task_name=selfies \
                 seed=${seed} \
@@ -37,6 +38,7 @@ do
                 logger.wandb.group=selfies    
             else
                 sbatch sbatch_scripts/selfies/selfies.sh \
+                logger=wandb_offline \
                 experiment=${algo} \
                 task_name=selfies \
                 seed=${seed} \

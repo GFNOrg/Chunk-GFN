@@ -25,6 +25,7 @@ do
 
             if [[ $algo == *"chunk"* ]]; then
                 sbatch sbatch_scripts/bit_sequence/bit_sequence.sh \
+                logger=wandb_offline \
                 experiment=${algo} \
                 task_name=bit_sequence \
                 seed=${seed} \
@@ -37,6 +38,7 @@ do
                 logger.wandb.group=bit_sequence    
             else
                 sbatch sbatch_scripts/bit_sequence/bit_sequence.sh \
+                logger=wandb_offline \
                 experiment=${algo} \
                 task_name=bit_sequence \
                 seed=${seed} \

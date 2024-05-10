@@ -22,12 +22,16 @@ do
             cutoff="${fields[1]}"
             cutoff=$((cutoff))
 
+            modes_path="/home/mila/o/oussama.boussif/Chunk-GFN/L14_RNA1_modes.pkl"
+
             if [[ $algo == *"chunk"* ]]; then
                 sbatch sbatch_scripts/rna_binding/rna_binding.sh \
+                logger=wandb_offline \
                 experiment=${algo} \
                 task_name=rna_binding \
                 seed=${seed} \
                 data.task=${task} \
+                data.modes_path=${modes_path} \
                 gfn.chunk_algorithm=bpe \
                 gfn.n_samples=10000 \
                 gfn.replay_buffer.cutoff_distance=${cutoff} \
@@ -36,10 +40,12 @@ do
                 logger.wandb.group=rna_binding    
             else
                 sbatch sbatch_scripts/rna_binding/rna_binding.sh \
+                logger=wandb_offline \
                 experiment=${algo} \
                 task_name=rna_binding \
                 seed=${seed} \
                 data.task=${task} \
+                data.modes_path=${modes_path} \
                 gfn.replay_buffer.cutoff_distance=${cutoff} \
                 gfn.reward_temperature=0.3333333333333333 \
                 logger.wandb.name=${algo}_${task}_bpe \
