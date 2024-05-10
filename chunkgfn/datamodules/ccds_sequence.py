@@ -4,6 +4,7 @@ import gzip
 from Bio import SeqIO
 from pathlib import Path
 import os
+import random
 
 from polyleven import levenshtein
 import marisa_trie
@@ -84,27 +85,30 @@ class CCDSSequenceModule(BaseSequenceModule):
         max_len: int,
         num_train_iterations: int,
         task: str,
+        num_modes: int = 100,
+        n_held_out: int = 10,
         batch_size: int = 64,
         sample_exact_length: bool = False,
+        threshold: float = 0.9,
         num_workers: int = 0,
         pin_memory: bool = False,
+        max_length: int = None,
         eps: float = 1e-12,
         **kwargs,
     ) -> None:
+        # this line allows to access init params with 'self.hparams' attribute
+        # also ensures init params will be stored in ckpt
+        self.save_hyperparameters(logger=False)
+
         assert task in ["dna", "rna", "protein", "protein_exons"]
 
         # Set the tokens and the sequences for the task (RNA vs Proteins).
         dpath = default_data_path()
         if task in ["rna", "dna"]:
-            tokens = ["<EOS>", "A", "G", "T", "C",]
             self.dset = open_fasta(
                 os.path.join(dpath, "CCDS_nucleotide.current.fna.gz"),
             )
         else:
-            tokens = [
-                "<EOS>", "A", "C", "D", "E", "F", "G", "H", "I", "K", "L", "M",
-                "N", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y",
-            ]
             if task == "protein_exons":
                 self.dset = open_fasta(
                     os.path.join(dpath, "CCDS_protein_exons.current.faa.gz"),
@@ -114,14 +118,35 @@ class CCDSSequenceModule(BaseSequenceModule):
                     os.path.join(dpath, "CCDS_protein.current.faa.gz"),
                 )
 
-        self.truncate_examples(None)  # "None" performs no truncation.
         self.eps = eps
-        self.modes = []
         self.len_modes = 0
+        self.modes = []
+        self.num_modes = num_modes
+        self.n_held_out = n_held_out
+        self.threshold = threshold
+
+        # All unique tokens in this dataset.
+        atomic_tokens_npy = np.unique([*"".join(list(self.dset.keys()))])
+        atomic_tokens = [str(x) for x in atomic_tokens_npy]
+
+        # "None" performs no truncation.
+        if max_len is None:
+            self.examples = list(self.dset.keys())
+        else:
+           self.examples = [x[:max_len] for x in list(self.dset.keys())]
+        self.max_example_len = max([len(x) for x in self.examples])
+
+        # Trie is used for fast distance search.
+        self.trie = marisa_trie.Trie(self.examples)
+
+        # Create the training modes and the "known" (held out) sequences.
+        self.modes = self.examples[:self.num_modes]
+        self.known_sequences = self.examples[-self.n_held_out:]
+        self.len_modes = torch.tensor([len(m) for m in self.modes])
 
         super().__init__(
-            atomic_tokens=tokens,
-            max_len=max_len,
+            atomic_tokens=atomic_tokens,
+            max_len=max(self.len_modes) if max_len is None else max_len,
             num_train_iterations=num_train_iterations,
             batch_size=batch_size,
             sample_exact_length=sample_exact_length,
@@ -130,13 +155,15 @@ class CCDSSequenceModule(BaseSequenceModule):
             **kwargs,
         )
 
-    def truncate_examples(self, n):
-        """Truncates the examples to a fixed length."""
-        if n is None:
-            self.examples = list(self.dset.keys())
-        else:
-           self.examples = [x[:n] for x in list(self.dset.keys())]
-        self.max_example_len = max([len(x) for x in self.examples])
+    def normalized_edit_distance(self, strings: list):
+        scores, seqs, lengths = [], [], []
+        for string in strings:
+            matching_seq, score = find_closest_match(string, self.trie, max_cost=1000)
+            scores.append(score)
+            seqs.append(matching_seq)
+            lengths.append(len(matching_seq))
+
+        return torch.tensor(scores), seqs, torch.tensor(lengths)
 
     def compute_logreward(self, states: torch.Tensor) -> torch.Tensor:
         """Compute the reward for the given states and action.
@@ -149,11 +176,9 @@ class CCDSSequenceModule(BaseSequenceModule):
             s.replace("<EOS>", "") for s in self.to_strings(states)
         ]  # remove <EOS> tokens for computing reward
 
-        dists = torch.tensor([[levenshtein(s, i) for i in self.modes] for s in strings])
-        values, indices = torch.min(dists, dim=-1)
-        reward = 1 - values / self.len_modes[indices]
+        scores, _, lengths = self.normalized_edit_distance(strings)
 
-        return reward
+        return 1 - scores / lengths
 
     def compute_metrics(self, states: torch.Tensor) -> dict[str, torch.Tensor]:
         """Compute metrics for the given states.
@@ -167,15 +192,21 @@ class CCDSSequenceModule(BaseSequenceModule):
         ]  # remove <EOS> tokens
         self.visited.update(set(strings))
 
-        valid_rewards = []
-        for s in strings:
-            mol = Chem.MolFromSmiles(s)
-            if mol is not None:
-                valid_rewards.append(qed(mol))
+        scores, seqs, lengths = self.normalized_edit_distance(strings)
+        reward = 1 - scores / lengths
+
+        # Find the modes that are close to the samples, and save them.
+        modes_found = []
+        for (seq, r) in zip(seqs, reward):
+            if r > self.threshold:
+                modes_found.append(seq)
+
+        modes_found = set(modes_found)
+        self.discovered_modes.update(modes_found)
 
         metrics = {
-            "num_valid": float(len(valid_rewards)),
-            "avg_valid_reward": np.mean(valid_rewards),
+            "num_modes": float(len(self.discovered_modes)),
+            "num_visited": float(len(self.visited)),
         }
 
         return metrics
@@ -188,17 +219,7 @@ class CCDSSequenceModule(BaseSequenceModule):
         """
         test_seq = []
 
-        known_molecules = [
-            'CC(=O)OC1=CC=CC=C1C(=O)O',  # aspirin
-            'CC(C)CC1=CC=C(C=C1)C(C)C(=O)O',  # ibuprofen
-            'CN1C2CCC1C(C(C2)OC(=O)C3=CC=CC=C3)C(=O)OC',  # cocaine
-            'C1=CC=C(C=C1)C=O',  # benzaldehyde
-            'CCCC1=CC=C(C=C1)C=O',  # 4-propylbenzaldehyde
-            'CC(=O)C'  # acetone
-        ]
-        known_molecules = [m for m in known_molecules if len(m) < self.max_len]
-
-        for string in known_molecules:
+        for string in self.known_sequences:
             s_idx = torch.tensor(
                 [self.atomic_tokens.index(char) for char in string]
                 + [self.atomic_tokens.index("<EOS>")]
@@ -208,6 +229,7 @@ class CCDSSequenceModule(BaseSequenceModule):
             seq = torch.full((self.max_len + 1, s_tensor.shape[1]), -1, dtype=torch.float)
             seq[:len(s_tensor)] = s_tensor
             test_seq.append(seq)
+
         test_seq = torch.stack(test_seq, dim=0)
         test_rs = self.compute_logreward(test_seq)
 
@@ -215,23 +237,23 @@ class CCDSSequenceModule(BaseSequenceModule):
 
 
 if __name__ == "__main__":
-    dset = CCDSSequenceModule(
-        max_len=30,
-        num_train_iterations=100,
-        task="dna",
-        batch_size=64,
-        sample_exact_length=False,
-        num_workers=0,
-        pin_memory=False,
-        eps=1e-12,
-    )
+
 
     from datetime import datetime
 
     truncate = [None, 1000, 100]
     for t in truncate:
 
-        dset.truncate_examples(t)
+        dset = CCDSSequenceModule(
+            max_len=t,
+            num_train_iterations=100,
+            task="dna",
+            batch_size=64,
+            sample_exact_length=False if t is None else True,
+            num_workers=0,
+            pin_memory=False,
+            eps=1e-12,
+        )
         trie = marisa_trie.Trie(dset.examples[1:])
 
         for example_idx in [0, -1]:
@@ -241,3 +263,4 @@ if __name__ == "__main__":
             time_taken = end - now
             print("truncate={}, time={}, idx={}, score={}".format(
                 t, time_taken, example_idx, score))
+
