@@ -197,6 +197,8 @@ class PrioritizedReplay(ReplayBuffer):
             dict: Dictionary containing the samples.
         """
         probs = torch.softmax(self.storage["logreward"], dim=-1)
+        if probs.shape[-1]< num_samples:
+            raise ValueError(f"Number of samples to draw is larger than the buffer size. Decrease gfn.num_samples to less than {probs.shape[-1]}")
         ixs = torch.multinomial(probs, num_samples, replacement=False)
         samples = {}
 

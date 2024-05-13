@@ -1,8 +1,8 @@
 from abc import ABC
 from typing import List
-
 import torch
 from torch.utils.data import Dataset
+import numpy as np
 
 from .base_module import BaseUnconditionalEnvironmentModule
 
@@ -28,7 +28,7 @@ class SequenceDataset(Dataset):
 
 
 class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
-    """Base Sequence module that can be inherited from for specific tasks.
+    """wBase Sequence module that can be inherited from for specific tasks.
     """
 
     def __init__(
@@ -63,6 +63,7 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
         self.eos_token = torch.tensor([1] + [0] * (len(self.atomic_tokens) - 1))
         # Actions can change during training. Not to be confused with atomic_tokens.
         self.actions = self.atomic_tokens.copy()
+        
         self.action_len = torch.ones(
             len(self.actions)
         ).long()  # Length of each action. Can change during training.
@@ -143,6 +144,16 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
             indices = state.argmax(dim=-1)
             strings.append("".join([self.atomic_tokens[i] for i in indices]))
         return strings
+
+    def to_strings_traj(self, trajs: torch.Tensor, dones: torch.Tensor) -> list[list[str]] :
+        str_trajectories = []
+        for i in range(trajs.shape[0]):
+            traj, done = trajs[i], dones[i]
+            ixs = torch.where(done == False)[0]
+            traj = traj[ixs[0]:ixs[-1]+1]
+            str_trajectories.append(self.to_strings(traj))
+        return str_trajectories
+
 
     def forward_step(self, states: torch.Tensor, forward_action: torch.Tensor):
         """Change the states after you apply the forward action.
@@ -334,3 +345,120 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
 
         self.data_val = SequenceDataset(val_seq, val_rs)
         self.data_test = SequenceDataset(test_seq, test_rs)
+
+
+    def compute_logN( self, terminal_string, alpha):
+        ''' 
+        Returns the weighted number of trajectories, according to Kolya's formula.
+
+        Args :
+            terminal_string : str, the terminal string
+            alpha : float, temperature parameter
+        Returns:
+            logN : dict, where:
+                - keys are all possible substates that can be used to construct terminal_string,
+                - Value is the log-weighted number of trajectories that go through that substate, given terminal_string.
+            mask_back_action : tensor of size len(terminal_string) x len(actions), where mask_back_action[i,j] is 1 if action j is a parent of terminal_string[:i]
+        '''    
+        atomic_traj = list(terminal_string.replace('<EOS>',''))
+        logN = {'': 0}
+        mask_back_action = torch.ones(len(terminal_string), len(self.actions))  # Parents mask. Is 1 if the action is a parent of the current string
+        actions = { action: len(action) for action in self.actions}
+        for i in range(1, len(atomic_traj) + 1):
+            parents_i = []
+            for action, j in actions.items():
+                if terminal_string[i - j  :i]  == action:
+                    mask_back_action[i - 1, self.actions.index(action)] = 0
+                    parents_i.append(terminal_string[:i - j])
+
+            logN_parents_i = torch.Tensor([ logN[s] for s in parents_i])
+            logN[ terminal_string[:i] ] = alpha + torch.logsumexp(logN_parents_i, dim = 0).item()
+        return logN, mask_back_action
+
+
+
+    def get_logpb_state(self, string, terminal_string, alpha, logN, mask_back_action):
+        '''
+        Computes the logpb of each action in the library given the current state ( = string), according to Kolya's formula.
+
+        Args :
+            string : str, the current state
+            terminal_string : str, the terminal state
+            alpha : float, temperature parameter
+            N : dict, the weighted number of trajectories given terminal_string
+            mask_back_action : tensor of size len(terminal_string) x len(actions), where mask_back_action[i,j] is 1 if action j is a parent of terminal_string[:i]
+        
+        Returns :
+            logpb : tensor of size len(actions), where logpb[j] is the logpb of choosing action j for the current state string.
+        '''
+        assert terminal_string[:len(string)] == string 
+        assert list(logN.keys())[-1] == terminal_string.replace('<EOS>','')
+        logpb = - torch.ones(len(self.actions))*float("Inf")
+        if string[-5:] == '<EOS>':
+            logpb[0] = 1 # Action of removing the EOS
+        elif len(string) > 0:
+            mask = mask_back_action[len(string) - 1]
+            ixs = np.where(mask==0)[0]
+            for j in ixs:
+                logpb[j] = alpha + logN[string[:- len(self.actions[j])]] - logN[string]
+        elif len(string) == 0:
+            logpb = torch.zeros(len(self.actions))
+            # When no action is available, just fill with uniform because
+            # it won't be picked anyway in the backward_step.
+            # Doing this avoids having nan when computing probabilities
+        return logpb
+        
+
+    def get_logpb_traj(self, trajectory, alpha, logN):
+        ''' 
+        Computes the logpb of each action in the library given one trajectory, according to Kolya's formula. 
+        Args : 
+            traj : list of states, representing a trajectory sampled by a Gflownet
+            alpha : float, temperature parameter
+        Returns :
+            logpbs : tensor of size len(traj)-1 x len(actions), where logpbs[i,j] is the logpb of choosing action j for state i
+        '''
+        if trajectory[-1][-5:] == '<EOS>':
+            traj = trajectory[:-1]
+        else:
+            traj = trajectory
+        if list(logN.keys())[-1] != traj[-1] :
+            print(list(logN.keys())[-1],traj[-1] )
+            raise ValueError('The last state of the trajectory is not the same as terminal state')
+        logpbs = - torch.ones(len(traj[:-1]))*float("Inf")
+        for i in range(1,len(traj)):
+            logpbs[i - 1] = alpha + logN[traj[i-1]] - logN[traj[i]]
+        return logpbs.sum().item()
+
+    def compute_logNs( self, terminal_strings, alpha):
+        res = [ self.compute_logN(terminal_string, alpha) for terminal_string in terminal_strings]
+        logNs = [logN for logN, _ in res]
+        mask_back_actions = [mask_back_action for _, mask_back_action in res]
+        return logNs, mask_back_actions
+
+
+    def get_logpb_states(self, strings, terminal_strings, alpha, logNs, mask_back_actions):
+        logpbs = torch.zeros(len(strings), len(self.actions))
+        for i, (string, terminal_string, logN, mask_back_action) in enumerate(zip(strings, terminal_strings, logNs, mask_back_actions)):
+            logpbs[i] = self.get_logpb_state(string, terminal_string, alpha, logN, mask_back_action)
+        return logpbs
+
+
+
+    def get_logpb_trajs(self, trajs, alpha, logNs):
+        logpbs = torch.zeros(len(trajs))
+        for i, (traj, logN) in enumerate(zip(trajs, logNs)):
+            logpbs[i] = self.get_logpb_traj(traj, alpha, logN)
+        return logpbs
+
+
+
+   
+
+        
+
+
+        
+
+
+  

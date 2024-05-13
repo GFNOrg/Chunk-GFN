@@ -25,7 +25,7 @@ epsilon_scheduler:
 
 replay_buffer:
   _target_: chunkgfn.replay_buffer.random_replay.RandomReplay
-  capacity: 2500
+  capacity: 10000
   is_conditional: False
   reward_sampling: False
 

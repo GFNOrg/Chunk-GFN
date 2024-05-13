@@ -25,7 +25,7 @@ epsilon_scheduler:
 
 replay_buffer:
   _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
-  capacity: 2500
+  capacity: 10000
   cutoff_distance: 5
   is_conditional: False
 
@@ -41,4 +41,7 @@ library_update_frequency: 10 # Frequency of updating the library
 n_samples: 1000 # Number of samples to draw from the library
 weight_initialization: average # Weight initialization for the the new token
 n_chunks: 1 # Number of chunks to add per round
-chunk_algorithm: "uniform" # Algorithm to select chunks, can be either "uniform" or "bpe"
+chunk_algorithm: "bpe" # Algorithm to select chunks, can be either "uniform" or "bpe"
+use_pb_kolya: True # Use the PB-Kolya model
+use_pb_onelookahead: False # Use the PB-OneLookahead model
+alpha_pb: -2 
