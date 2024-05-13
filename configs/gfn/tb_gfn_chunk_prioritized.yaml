@@ -42,3 +42,4 @@ library_update_frequency: 75 # Frequency of updating the library
 n_samples: 10000 # Number of samples to draw from the library
 n_chunks: 1 # Number of chunks to add per round
 chunk_algorithm: "bpe" # Algorithm to select chunks, can be either "uniform" or "bpe"
+n_onpolicy_samples: 512 # Number of on-policy samples to draw for each validation step
