@@ -25,12 +25,12 @@ do
 
             if [[ $algo == *"chunk"* ]]; then
                 sbatch sbatch_scripts/selfies/selfies.sh \
-                logger=wandb_offline \
                 experiment=${algo} \
                 task_name=selfies \
                 seed=${seed} \
                 data.max_len=${length} \
                 gfn.chunk_algorithm=bpe \
+                gfn.library_update_frequency=25 \
                 gfn.n_samples=10000 \
                 gfn.replay_buffer.cutoff_distance=${cutoff} \
                 gfn.reward_temperature=0.3333333333333333 \
@@ -38,7 +38,6 @@ do
                 logger.wandb.group=selfies    
             else
                 sbatch sbatch_scripts/selfies/selfies.sh \
-                logger=wandb_offline \
                 experiment=${algo} \
                 task_name=selfies \
                 seed=${seed} \
