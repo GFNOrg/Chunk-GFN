@@ -35,7 +35,7 @@ do
                 gfn.chunk_algorithm=bpe \
                 gfn.n_samples=10000 \
                 gfn.replay_buffer.cutoff_distance=${cutoff} \
-                gfn.reward_temperature=0.3333333333333333 \
+                gfn.reward_temperature=0.125 \
                 logger.wandb.name=${algo}_${task}_bpe \
                 logger.wandb.group=rna_binding    
             else
@@ -47,7 +47,7 @@ do
                 data.task=${task} \
                 data.modes_path=${modes_path} \
                 gfn.replay_buffer.cutoff_distance=${cutoff} \
-                gfn.reward_temperature=0.3333333333333333 \
+                gfn.reward_temperature=0.125 \
                 logger.wandb.name=${algo}_${task}_bpe \
                 logger.wandb.group=rna_binding  
             fi             
