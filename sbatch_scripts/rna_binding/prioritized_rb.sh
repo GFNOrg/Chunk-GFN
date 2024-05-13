@@ -10,6 +10,8 @@ algorithms=(
     "rna_binding_prioritized"
 )
 
+modes_path="${HOME}/chunkgfn/L14_RNA1_modes.pkl"
+
 for seed in 1998 2024 42
 do
     for algo in "${algorithms[@]}"
@@ -21,8 +23,6 @@ do
             task="${fields[0]}"
             cutoff="${fields[1]}"
             cutoff=$((cutoff))
-
-            modes_path="${HOME}/chunkgfn_L14_RNA1_modes.pkl"
 
             if [[ $algo == *"chunk"* ]]; then
                 sbatch sbatch_scripts/rna_binding/rna_binding.sh \
