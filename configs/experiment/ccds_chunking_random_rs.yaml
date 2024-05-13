@@ -44,7 +44,7 @@ gfn:
     reward_sampling: True
 
   reward_temperature: 0.3333
-  library_update_frequency: 75 # Frequency of updating the library
+  library_update_frequency: 25 # Frequency of updating the library
   n_samples: 1000 # Number of samples to draw from the library
   n_trajectories: 30
 

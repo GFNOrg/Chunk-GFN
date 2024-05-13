@@ -18,7 +18,7 @@ data:
   num_train_iterations: 25
   sample_exact_length: False
   batch_size: 256
-  
+
 trainer:
   max_epochs: 1500
   check_val_every_n_epoch: 20
@@ -42,7 +42,7 @@ gfn:
     capacity: 10000
 
   reward_temperature: 0.3333
-  library_update_frequency: 75 # Frequency of updating the library
+  library_update_frequency: 25 # Frequency of updating the library
   n_samples: 10000 # Number of samples to draw from the library
   n_trajectories: 30
   total_library_size: 50 # The size of the library
