@@ -17,13 +17,13 @@ from chunkgfn.schedulers import Scheduler
 from ..constants import EPS, NEGATIVE_INFINITY
 
 
-class UnConditionalSequenceGFN(ABC, LightningModule):
-    """Abstract class for sequence-based Generative Flow Networks."""
+class A2C(ABC, LightningModule):
+    """Abstract class for RL algos."""
 
     def __init__(
         self,
         forward_model: torch.nn.Module,
-        backward_model: torch.nn.Module,
+        critic_model: torch.nn.Module,
         action_model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
@@ -37,9 +37,8 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
 
         # GFlowNet modules
         self.forward_model = forward_model
-        self.backward_model = backward_model
+        self.critic_model = critic_model
         self.action_model = action_model
-        self.logZ = nn.Parameter(torch.zeros(1))
 
         # Schedulers for off-policy training
         self.epsilon_scheduler = epsilon_scheduler
@@ -78,22 +77,15 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
                     "lr": self.hparams.action_lr,
                 }
             )
-        if self.backward_model is not None and has_trainable_parameters(
-            self.backward_model
+        if self.critic_model is not None and has_trainable_parameters(
+            self.critic_model
         ):
             params.append(
                 {
-                    "params": self.backward_model.parameters(),
-                    "lr": self.hparams.backward_lr,
+                    "params": self.critic_model.parameters(),
+                    "lr": self.hparams.critic_lr,
                 }
             )
-
-        params.append(
-            {
-                "params": self.logZ,
-                "lr": self.hparams.partition_lr,
-            }
-        )
 
         optimizer = self.hparams.optimizer(params=params)
         if self.hparams.scheduler is not None:
@@ -154,62 +146,6 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             dim**0.5
         )  # Same as in softmax
         return logits
-
-    def go_backward(
-        self,
-        final_state: torch.Tensor,
-    ):
-        """Sample backward trajectories conditioned on inputs.
-        Args:
-            final_state (torch.Tensor[batch_size, *state_shape]): Final state.
-        Return:
-            trajectories (torch.Tensor[batch_size, trajectory_length, *state_shape]): Trajectories for each sample in the batch.
-            actions (torch.Tensor[batch_size, trajectory_length]): Actions for each sample in the batch.
-            dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
-            state (torch.Tensor[batch_size, *state_shape]): Final state.
-        """
-        bs = final_state.shape[0]
-        state = final_state.clone()
-        done = torch.zeros((bs)).to(final_state).bool()
-
-        # Start unrolling the trajectories
-        actions = []
-        trajectories = []
-        dones = []
-        dones.append(torch.ones((bs)).to(final_state).bool())
-
-        while not done.all():
-            backward_actions = self.trainer.datamodule.get_parent_actions(state)
-            logp_b_s = torch.where(
-                backward_actions == 1, torch.tensor(0.0), -torch.inf
-            ).to(state)
-            # When no action is available, just fill with uniform because
-            # it won't be picked anyway in the backward_step.
-            # Doing this avoids having nan when computing probabilities
-            logp_b_s = torch.where(
-                (logp_b_s == -torch.inf).all(dim=-1).unsqueeze(1),
-                torch.tensor(0.0),
-                logp_b_s,
-            )
-            cat = Categorical(logits=logp_b_s)
-
-            act = cat.sample()
-
-            new_state, done = self.trainer.datamodule.backward_step(state, act)
-
-            actions.append(act)
-            trajectories.append(state)
-            dones.append(done.clone())
-
-            state = new_state.clone()
-
-        trajectories.append(state)
-
-        trajectories = torch.stack(trajectories[::-1], dim=1)
-        actions = torch.stack(actions[::-1], dim=1)
-        dones = torch.stack(dones[::-1], dim=1)
-
-        return trajectories, actions, dones, final_state
 
     def forward(
         self,
@@ -297,7 +233,6 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
 
         return trajectories, actions, dones, state, trajectory_length
 
-    @abstractmethod
     def compute_loss(self, trajectories, actions, dones, logreward):
         """Compute the loss for the model.
         Args:
@@ -306,66 +241,41 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
             logreward (torch.Tensor[batch_size]): Log reward.
         """
-        NotImplementedError
 
-    @torch.no_grad()
-    def get_ll(
-        self, final_state: torch.Tensor, logreward: torch.Tensor
-    ) -> torch.Tensor:
-        """Get the log likelihood of the model for the given trajectories.
-        Args:
-            final_state (torch.Tensor[batch_size, *state_shape]): The examples for which we're computing the log-likelihood.
-            logreward (torch.Tensor[batch_size]): Log reward.
-        Return:
-            log_pT (torch.Tensor[batch_size]): Log likelihood.
-            trajectories (torch.Tensor[batch_size*n_trajectories, trajectory_length, *state_shape]): Trajectories for each sample in the batch.
-            actions (torch.Tensor[batch_size*n_trajectories, trajectory_length]): Actions for each sample in the batch.
-            dones (torch.Tensor[batch_size*n_trajectories, trajectory_length]): Whether the trajectory is done or not.
-            logreward (torch.Tensor[batch_size*n_trajectories]): Log reward.
-        """
-        # Repeat the final_state n_trajectories times
-        bs = final_state.shape[0]
-        final_state = repeat(
-            final_state, "b ... -> b n ...", n=self.hparams.n_trajectories
-        )
-        final_state = rearrange(final_state, "b n ... -> (b n) ...")
-        logreward = repeat(logreward, "b -> b n", n=self.hparams.n_trajectories)
-        logreward = rearrange(logreward, "b n ... -> (b n) ... ")
-        trajectories, actions, dones, final_state = self.go_backward(final_state)
+        # We don't compute the value and policy loss for the final state
+        trajectories = trajectories[:, :-1]
+        dones = dones[:, :-1]
 
-        # Calculate the log likelihood
-        log_pf = 0
-        log_pb = 0
-        for t in range(trajectories.shape[1]):
-            state = trajectories[:, t]
-            logit_pf = self.get_forward_logits(state)
-            if t < trajectories.shape[1] - 1:
-                log_pf += (Categorical(logits=logit_pf).log_prob(actions[:, t])) * (
-                    ~dones[:, t] + 0
-                )
-            if t > 0:
-                backward_actions = self.trainer.datamodule.get_parent_actions(state)
-                logp_b_s = torch.where(
-                    backward_actions == 1, torch.tensor(0.0), -torch.inf
-                ).to(logit_pf)
-                # When no action is available, just fill with uniform because it won't be picked anyway in the backward_step. Doing this avoids having nan when computing probabilities
-                logp_b_s = torch.where(
-                    (logp_b_s == -torch.inf).all(dim=-1).unsqueeze(1),
-                    torch.tensor(0.0),
-                    logp_b_s,
-                )
-                log_pb += torch.where(
-                    dones[:, t] | self.trainer.datamodule.is_initial_state(state),
-                    torch.tensor(0.0),
-                    Categorical(logits=logp_b_s).log_prob(actions[:, t - 1]),
-                )
-        log_pf = rearrange(log_pf, "(b n) ... -> b n ...", b=bs)
-        log_pb = rearrange(log_pb, "(b n) ... -> b n ...", b=bs)
-        log_pT = torch.logsumexp(log_pf - log_pb, dim=1) - torch.log(
-            torch.tensor(self.hparams.n_trajectories)
+        states = rearrange(trajectories, "b t ... -> (b t) ...")
+        # Since reward only given at the end, return=reward
+        returns = logreward.repeat_interleave(trajectories.shape[1]).exp()
+        values = self.critic_model(states).squeeze()
+
+        advantage = returns - values
+
+        logits = self.get_forward_logits(states)
+        forward_mask = self.trainer.datamodule.get_forward_mask(states)
+        logits = torch.where(
+            forward_mask,
+            logits,
+            torch.tensor(NEGATIVE_INFINITY).to(logits),
         )
 
-        return log_pT, trajectories, actions, dones, logreward
+        value_loss = advantage.pow(2)
+        policy_loss = -advantage.detach() * Categorical(logits=logits).log_prob(
+            rearrange(actions, "b t ... -> (b t) ...")
+        )
+        entropy_loss = Categorical(logits=logits).entropy()
+
+        loss = rearrange(
+            (value_loss + policy_loss - self.hparams.entropy_coeff * entropy_loss),
+            "(b t) -> b t",
+            b=trajectories.shape[0],
+        )
+        loss = torch.where(dones, 0, loss)
+        loss = loss.sum(1).mean()
+
+        return loss
 
     def sample(
         self,
@@ -391,26 +301,6 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             final_state,
             logreward,
             trajectory_length,
-        )
-
-    def log_action_histogram(self):
-        """Log the action histogram."""
-        normalizing_constant = self.trainer.datamodule.action_frequency.sum()
-        action_frequency = [
-            [freq / normalizing_constant, action]
-            for (freq, action) in zip(
-                self.trainer.datamodule.action_frequency,
-                self.trainer.datamodule.actions,
-            )
-        ]
-        table = wandb.Table(data=action_frequency, columns=["frequency", "action"])
-
-        self.logger.log_metrics(
-            {
-                "action_histogram": wandb.plot.bar(
-                    table, "action", "frequency", title="Action Frequency"
-                )
-            }
         )
 
     def training_step(self, train_batch, batch_idx) -> Any:
@@ -466,26 +356,17 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             )
             logreward = torch.cat([logreward[indices], samples["logreward"]], dim=0)
 
-        loss, logZ = self.compute_loss(trajectories, actions, dones, logreward)
+        loss = self.compute_loss(trajectories, actions, dones, logreward)
         additional_metrics = self.trainer.datamodule.compute_metrics(final_state)
 
         self.train_loss(loss)
         self.train_logreward(logreward.mean())
-        self.train_logZ(logZ.mean())
         self.train_trajectory_length(trajectory_length.float().mean())
 
         self.log("train/loss", self.train_loss, on_step=True, prog_bar=True)
         self.log(
             "train/logreward",
             self.train_logreward,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
-
-        self.log(
-            "train/logZ",
-            self.train_logZ,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
@@ -532,39 +413,8 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
 
         return loss
 
-    def validation_step(self, val_batch, batch_idx) -> Any:
-        final_state, logreward = val_batch
-        log_pT, trajectories, actions, dones, logreward = self.get_ll(
-            final_state, logreward
-        )
-        loss, _ = self.compute_loss(trajectories, actions, dones, logreward)
-
-        logreward = rearrange(
-            logreward, "(b n) ... -> b n ...", b=final_state.shape[0]
-        ).mean(dim=1)
-
-        self.val_loss(loss)
-        self.val_logreward(logreward.mean())
-        self.val_correlation(log_pT, logreward)
-
-        self.log("val/loss", self.val_loss, on_step=True, prog_bar=True)
-        self.log(
-            "val/logreward",
-            self.val_logreward,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
-        self.log(
-            "val/correlation",
-            self.val_correlation,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-        )
-
     def on_validation_epoch_end(self):
-        # Get on-policy samples from the GFN
+        # Get on-policy samples from the policy
         dummy_batch = torch.arange(self.hparams.n_onpolicy_samples).to(self.device)
         x, trajectories, actions, dones, final_state, logreward, trajectory_length = (
             self.sample(
