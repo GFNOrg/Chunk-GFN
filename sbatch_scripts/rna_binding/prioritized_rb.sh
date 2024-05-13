@@ -26,13 +26,13 @@ do
 
             if [[ $algo == *"chunk"* ]]; then
                 sbatch sbatch_scripts/rna_binding/rna_binding.sh \
-                logger=wandb_offline \
                 experiment=${algo} \
                 task_name=rna_binding \
                 seed=${seed} \
                 data.task=${task} \
                 data.modes_path=${modes_path} \
                 gfn.chunk_algorithm=bpe \
+                gfn.library_update_frequency=25 \
                 gfn.n_samples=10000 \
                 gfn.replay_buffer.cutoff_distance=${cutoff} \
                 gfn.reward_temperature=0.125 \
@@ -40,7 +40,6 @@ do
                 logger.wandb.group=rna_binding
             else
                 sbatch sbatch_scripts/rna_binding/rna_binding.sh \
-                logger=wandb_offline \
                 experiment=${algo} \
                 task_name=rna_binding \
                 seed=${seed} \
