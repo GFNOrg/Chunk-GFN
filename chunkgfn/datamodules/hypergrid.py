@@ -95,6 +95,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         pin_memory: bool = False,
         **kwargs,
     ) -> None:
+        self.save_hyperparameters(logger=False)
         super().__init__(
             num_train_iterations,
             batch_size,
@@ -122,14 +123,15 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         self.sf = torch.cat(
             [torch.ones(self.ndim) * (self.side_length - 1), torch.tensor([1])]
         ).long()  # Final state
-        self.actions = [ALPHABET[i] for i in range(self.ndim)] + [self.exit_action] # Actions can change during training
+        self.actions = [ALPHABET[i] for i in range(self.ndim)] + [
+            self.exit_action
+        ]  # Actions can change during training
         self.action_len = torch.Tensor(
             [1] * len(self.actions)
         ).long()  # Length of each action. Can change during training.
         self.action_frequency = torch.zeros(
             len(self.actions)
         )  # Tracks the frequency of each action. Can change during training.
-
 
     @property
     def acting_tensor(self) -> torch.Tensor:
@@ -314,9 +316,9 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         acting_tensor = self.acting_tensor.unsqueeze(0).to(states.device)
         actions_mask = (diff.unsqueeze(1) >= acting_tensor).all(dim=-1)
         actions_mask[self.is_terminal_state(states)] = False
-        actions_mask[self.is_terminal_state(states), self.actions.index(self.exit_action)] = (
-            True
-        )
+        actions_mask[
+            self.is_terminal_state(states), self.actions.index(self.exit_action)
+        ] = True
 
         return actions_mask
 
@@ -331,9 +333,9 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
 
         # When it's an exit state, only the <EXIT> backward action is allowed.
         parent_actions[self.is_terminal_state(states)] = False
-        parent_actions[self.is_terminal_state(states), self.actions.index(self.exit_action)] = (
-            True
-        )
+        parent_actions[
+            self.is_terminal_state(states), self.actions.index(self.exit_action)
+        ] = True
         return parent_actions
 
     def state_dict(self):
@@ -346,6 +348,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
             "data_val_logrewards": self.data_val.logrewards,
             "data_test_samples": self.data_test.samples,
             "data_test_logrewards": self.data_test.logrewards,
+            "action_frequency": self.action_frequency,
         }
         return state
 
@@ -354,6 +357,7 @@ class HyperGridModule(BaseUnconditionalEnvironmentModule):
         self.visited = state_dict["visited"]
         self.actions = state_dict["actions"]
         self.action_len = state_dict["action_len"]
+        self.action_frequency = state_dict["action_frequency"]
         self.data_val = HyperGridDataset(
             state_dict["data_val_samples"], state_dict["data_val_logrewards"]
         )

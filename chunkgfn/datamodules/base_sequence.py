@@ -28,8 +28,7 @@ class SequenceDataset(Dataset):
 
 
 class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
-    """Base Sequence module that can be inherited from for specific tasks.
-    """
+    """Base Sequence module that can be inherited from for specific tasks."""
 
     def __init__(
         self,
@@ -55,7 +54,9 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
         # Environment variables
         self.discovered_modes = set()  # Tracks the number of modes we discovered
         self.visited = set()  # Tracks the number of states we visited
-        self.atomic_tokens = [self.exit_action] + atomic_tokens  # Atomic tokens for representing the states. Stays fixed during training.
+        self.atomic_tokens = (
+            [self.exit_action] + atomic_tokens
+        )  # Atomic tokens for representing the states. Stays fixed during training.
         self.s0 = -torch.ones(
             1 + self.max_len, len(self.atomic_tokens)
         )  # Initial state
@@ -238,6 +239,7 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
             states.device
         ).unsqueeze(0)  # Only use actions that can fit in the state
         eos_token_idx = self.atomic_tokens.index(self.exit_action)
+        eos_token_idx = self.atomic_tokens.index(self.exit_action)
         if self.sample_exact_length:
             # Don't allow the EOS token to be sampled if the state is not full
             actions_mask[len_tokens_to_go > 1, eos_token_idx] = 0
@@ -308,6 +310,7 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
             "data_val_logrewards": self.data_val.logrewards,
             "data_test_sequences": self.data_test.sequences,
             "data_test_logrewards": self.data_test.logrewards,
+            "action_frequency": self.action_frequency,
         }
         return state
 
@@ -318,6 +321,7 @@ class BaseSequenceModule(BaseUnconditionalEnvironmentModule, ABC):
         self.action_len = state_dict["action_len"]
         self.modes = state_dict["modes"]
         self.len_modes = state_dict["len_modes"]
+        self.action_frequency = state_dict["action_frequency"]
         self.data_val = SequenceDataset(
             state_dict["data_val_sequences"], state_dict["data_val_logrewards"]
         )

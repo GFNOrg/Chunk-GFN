@@ -1,0 +1,45 @@
+_target_: chunkgfn.gfn.tb_gfn_variable.TBGFN_Variable
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  weight_decay: 0.0
+
+scheduler: null
+
+forward_model: null
+
+
+backward_model: null
+
+action_model:
+  _target_: chunkgfn.models.action_encoder.ActionModel
+  n_primitive_actions: 3
+  hidden_dim: 128
+  action_embedding_dimension: 128
+
+epsilon_scheduler:
+  _target_: chunkgfn.schedulers.linear_schedule.LinearSchedule
+  initial_value: 0.5
+  final_value: 0.1
+  max_epochs: ${trainer.max_epochs}
+
+replay_buffer:
+  _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
+  capacity: 10000
+  cutoff_distance: 5
+  is_conditional: False
+
+
+forward_lr: 1e-4
+partition_lr: 1e-3
+action_lr: 1e-4
+monitor: val/logreward
+ratio_from_replay_buffer: 0.55 # Ratio of samples from replay buffer
+n_trajectories: 1 # Number of test trajectories to sample
+reward_temperature: 0.3333 # Temperature for the reward
+library_update_frequency: 25 # Frequency of updating the library
+n_samples: 10000 # Number of samples to draw from the library
+n_chunks: 1 # Number of chunks to add per round
+chunk_algorithm: "bpe" # Algorithm to select chunks, can be either "uniform" or "bpe"
+n_onpolicy_samples: 512 # Number of on-policy samples to draw for each validation step

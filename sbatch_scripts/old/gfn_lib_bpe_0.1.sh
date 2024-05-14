@@ -12,4 +12,4 @@ module load libffi
 module load OpenSSL/1.1
 source $VENV/ai_scientist/bin/activate
 
-python main.py seed=42 gfn=cond_tb_gfn_variable trainer.max_epochs=1000 data.max_len=30 gfn.library_update_frequency=100 gfn.reward_temperature=0.1 logger.wandb.name="library_T_0.1_len_30"
+python main.py seed=42 gfn=cond_tb_gfn_variable trainer.max_epochs=1000 data.max_len=30 gfn.library_update_frequency=25 gfn.reward_temperature=0.1 logger.wandb.name="library_T_0.1_len_30"

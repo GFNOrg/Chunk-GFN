@@ -8,8 +8,6 @@ from torch.optim import lr_scheduler as lr_scheduler
 from torch.optim.optimizer import Optimizer as Optimizer
 
 from chunkgfn.gfn.base_conditional_gfn import ConditionalSequenceGFN
-from chunkgfn.gfn.utils import pad_dim
-from chunkgfn.models.utils import expand_embedding_layer, expand_linear_layer
 from chunkgfn.replay_buffer import ReplayBuffer
 from chunkgfn.schedulers import Scheduler
 
@@ -145,37 +143,7 @@ class Cond_TBGFN_Variable(ConditionalSequenceGFN):
         # Pick a number of generated samples from the replay buffer
         samples = self.replay_buffer.sample(self.hparams.n_samples)
         # Get the most valuable token
-        self.trainer.datamodule.chunk(samples["final_state"])
-
-        # Update model's weights
-        def init_weights(m):
-            m.bias.data.fill_(0.0)
-            m.weight.data.fill_(0.0)
-
-        self.forward_model.action_embeddings = expand_embedding_layer(
-            self.forward_model.action_embeddings,
-            new_in_dim=self.forward_model.action_embeddings.data.shape[0] + 1,
-            init_weights=None,
-        )
-        """
-        self.forward_model.logits_layer = expand_linear_layer(
-            self.forward_model.logits_layer,
-            new_out_dim=self.forward_model.logits_layer.out_features + 1,
-            init_weights=init_weights,
-        )
-        """
-        params_group = self.trainer.optimizers[0].state_dict()["param_groups"]
-        state = self.trainer.optimizers[0].state_dict()["state"]
-        state[0]["exp_avg"] = pad_dim(
-            state[0]["exp_avg"].T, self.forward_model.action_embeddings.data.shape[0]
-        ).T
-        state[0]["exp_avg_sq"] = pad_dim(
-            state[0]["exp_avg_sq"].T, self.forward_model.action_embeddings.data.shape[0]
-        ).T
-        # Reinitialize the optimizer
-        self.trainer.optimizers = [self.configure_optimizers()["optimizer"]]
-        self.trainer.optimizers[0].state_dict()["param_groups"] = params_group
-        self.trainer.optimizers[0].state_dict()["state"] = state
+        self.trainer.datamodule.chunk(samples["actions"], samples["dones"])
 
     def training_step(self, train_batch, batch_idx) -> Any:
         loss = super().training_step(train_batch, batch_idx)
