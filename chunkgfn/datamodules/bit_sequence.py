@@ -1,4 +1,4 @@
-import random
+import os
 
 import numpy as np
 import torch
@@ -15,10 +15,8 @@ class BitSequenceModule(BaseSequenceModule):
     def __init__(
         self,
         max_len: int,
-        num_modes: int,
         num_train_iterations: int,
         threshold: float,
-        oracle_difficulty: str = "medium",
         batch_size: int = 64,
         sample_exact_length: bool = False,
         num_workers: int = 0,
@@ -45,9 +43,8 @@ class BitSequenceModule(BaseSequenceModule):
             **kwargs,
         )
 
-        self.oracle_difficulty = oracle_difficulty
-        self.num_modes = num_modes
         self.threshold = threshold
+        self.modes_path = f"{os.environ['HOME']}/Chunk-GFN/modes_{self.max_len}.txt"
 
         self.create_modes()
 
@@ -58,28 +55,8 @@ class BitSequenceModule(BaseSequenceModule):
         If the difficulty is "hard" then the modes have different lengths with
         maximum length of `max_len` and minimum length of `max_len//2` and are unique.
         """
-        vocab = ["00000000", "11111111", "11110000", "00001111", "00111100"]
-        self.modes = set()
-        if self.oracle_difficulty == "medium":
-            while len(self.modes) < self.num_modes:
-                self.modes.add(
-                    "".join(random.choices(vocab, k=self.max_len // len(vocab[0])))
-                )
-
-        elif self.oracle_difficulty == "hard":
-            while len(self.modes) < self.num_modes:
-                self.modes.add(
-                    "".join(
-                        random.choices(
-                            vocab,
-                            k=random.randint(
-                                (self.max_len // len(vocab[0])) * 0.5,
-                                (self.max_len // len(vocab[0])),
-                            ),
-                        )
-                    )
-                )
-
+        with open(self.modes_path, "r") as f:
+            self.modes = f.read().splitlines()
         self.modes = list(self.modes)
         self.len_modes = torch.tensor([len(m) for m in self.modes])
 

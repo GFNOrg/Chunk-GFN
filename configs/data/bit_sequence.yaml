@@ -1,9 +1,7 @@
 _target_: chunkgfn.datamodules.bit_sequence.BitSequenceModule
 
 max_len: 32
-num_modes: 60
 num_train_iterations: 100
-oracle_difficulty: medium
 sample_exact_length: True # Whether to always sample sequences of length `max_len` or not
 threshold: 0.9
 batch_size: 64
