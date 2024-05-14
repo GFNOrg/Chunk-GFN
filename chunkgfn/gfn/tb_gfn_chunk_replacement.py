@@ -52,8 +52,15 @@ class TBGFN_Chunk_Replacement(UnConditionalSequenceGFN):
             loss (torch.Tensor[1]): Loss.
             logZ (torch.Tensor[1]): Log partition function.
         """
-        log_pf = 0
+        log_pf = 0 
         log_pb = 0
+        if self.hparams.pb == 'kolya':
+            # Convert all trajectories to strings
+            str_trajectories = self.trainer.datamodule.to_strings_traj(trajectories, dones)
+            terminal_strings = [item[-1] for item in str_trajectories]
+            logNs, _ = self.trainer.datamodule.compute_logNs(terminal_strings, alpha = self.hparams.alpha_pb )
+            log_pb = self.trainer.datamodule.get_logpb_trajs(str_trajectories, alpha = self.hparams.alpha_pb, logNs = logNs).to(trajectories.device)
+
         for t in range(trajectories.shape[1]):
             state = trajectories[:, t]
             logit_pf = self.get_forward_logits(state)
@@ -67,30 +74,52 @@ class TBGFN_Chunk_Replacement(UnConditionalSequenceGFN):
                 log_pf += (Categorical(logits=logit_pf).log_prob(actions[:, t])) * (
                     ~dones[:, t] + 0
                 )
-            if t > 0:
-                backward_actions = self.trainer.datamodule.get_parent_actions(state)
-                logp_b_s = torch.where(
-                    backward_actions == 1, torch.tensor(0.0), -torch.inf
-                ).to(logit_pf)
-                # When no action is available, just fill with uniform because it won't be picked anyway in the backward_step. Doing this avoids having nan when computing probabilities
-                logp_b_s = torch.where(
-                    (logp_b_s == -torch.inf).all(dim=-1).unsqueeze(1),
-                    torch.tensor(0.0),
-                    logp_b_s,
-                )
-                log_pb += torch.where(
-                    dones[:, t] | self.trainer.datamodule.is_initial_state(state),
-                    torch.tensor(0.0),
-                    Categorical(logits=logp_b_s).log_prob(actions[:, t - 1]),
-                )
+            
+            if self.hparams.pb =='greedy':
+                if t > 0:
+                    backward_actions = self.trainer.datamodule.get_parent_actions(state)
+                    action_len = self.trainer.datamodule.action_len.unsqueeze(0).repeat(trajectories.shape[0],1).to(state)
+                    logp_b_s = - (action_len*self.hparams.alpha_pb).to(state)
+                    logp_b_s[backward_actions==0] =-torch.inf
+                    
+                    # When no action is available, just fill with uniform because it won't be picked anyway in the backward_step. Doing this avoids having nan when computing probabilities
+                    logp_b_s = torch.where(
+                        (logp_b_s == -torch.inf).all(dim=-1).unsqueeze(1),
+                        torch.tensor(0.0),
+                        logp_b_s,
+                    )
+                    log_pb += torch.where(
+                        dones[:, t] | self.trainer.datamodule.is_initial_state(state),
+                        torch.tensor(0.0),
+                        Categorical(logits=logp_b_s).log_prob(actions[:, t - 1]),
+                    )
+            elif self.hparams.pb =='uniform':
+                if t > 0:
+                    backward_actions = self.trainer.datamodule.get_parent_actions(state)
+                    logp_b_s = torch.where(
+                        backward_actions == 1, torch.tensor(0.0), -torch.inf
+                    ).to(logit_pf)
+                    # When no action is available, just fill with uniform because it won't be picked anyway in the backward_step. Doing this avoids having nan when computing probabilities
+                    logp_b_s = torch.where(
+                        (logp_b_s == -torch.inf).all(dim=-1).unsqueeze(1),
+                        torch.tensor(0.0),
+                        logp_b_s,
+                    )
+                    log_pb += torch.where(
+                        dones[:, t] | self.trainer.datamodule.is_initial_state(state),
+                        torch.tensor(0.0),
+                        Categorical(logits=logp_b_s).log_prob(actions[:, t - 1]),
+                    )
+            elif self.hparams.pb != 'kolya':
+                raise ValueError('pb not defined. Choose in [kolya, greedy, uniform]')
 
         logZ = self.logZ
-
+        assert log_pf.shape == log_pb.shape
         loss = F.mse_loss(
             logZ + log_pf, (logreward / self.hparams.reward_temperature) + log_pb
         )
-
         return loss, logZ
+
 
     def update_library(self):
         """Update the library. This function will do the following, in the following order:

@@ -114,7 +114,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
     @torch.no_grad()
     def refactor_replay_buffer(self):
         """Refactor the replay buffer. This function takes final states from the replay
-        buffer and samples backward trajectories for them to get different trajctories
+        buffer and samples backward trajectories for them to get different trajectories
         based on the current library.
         """
         if self.replay_buffer is not None:
