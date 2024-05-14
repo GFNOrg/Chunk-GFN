@@ -40,7 +40,7 @@ do
                     gfn.n_samples=10000 \
                     gfn.replay_buffer.cutoff_distance=${cutoff} \
                     gfn.reward_temperature=0.3333333333333333 \
-                    logger.wandb.name=${algo}_${length}_bpe \
+                    logger.wandb.name=${algo}_${length}_pb_${pb}_bpe \
                     logger.wandb.group=bit_sequence    
                 else
                     sbatch sbatch_scripts/bit_sequence/bit_sequence.sh \
