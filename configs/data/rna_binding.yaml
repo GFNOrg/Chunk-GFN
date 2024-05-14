@@ -2,7 +2,7 @@ _target_: chunkgfn.datamodules.rna_binding.RNABindingModule
 
 num_train_iterations: 100
 batch_size: 64
-num_workers: 0
+num_workers: 3
 pin_memory: True
 persistent_workers: False
 task: L14_RNA1
