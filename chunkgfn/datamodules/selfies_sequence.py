@@ -26,8 +26,7 @@ ALPHABET = [
 
 
 class SELFIESSequenceModule(BaseSequenceModule):
-    """SELFIES building environment. Uses QED (drug-likeness) score as a reward.
-    """
+    """SELFIES building environment. Uses QED (drug-likeness) score as a reward."""
 
     def __init__(
         self,
@@ -37,17 +36,14 @@ class SELFIESSequenceModule(BaseSequenceModule):
         sample_exact_length: bool = False,
         num_workers: int = 0,
         pin_memory: bool = False,
-        beta: float = 8,
         scaffold_thresholds: Tuple = (0.6, 0.7, 0.8, 0.9),
         **kwargs,
     ) -> None:
-        atomic_tokens = list(string.ascii_letters)[:len(ALPHABET)]
+        self.save_hyperparameters(logger=False)
+        atomic_tokens = list(string.ascii_letters)[: len(ALPHABET)]
 
-        self.tokens2symbols = {
-            tok: sym for tok, sym in zip(atomic_tokens, ALPHABET)
-        }
+        self.tokens2symbols = {tok: sym for tok, sym in zip(atomic_tokens, ALPHABET)}
 
-        self.beta = beta
         self.min_threshold = min(scaffold_thresholds)
         self.discovered_scaffolds = {k: set() for k in scaffold_thresholds}
         self.modes = []
@@ -84,7 +80,7 @@ class SELFIESSequenceModule(BaseSequenceModule):
             smiles = sf.decoder(selfie)
             mol = Chem.MolFromSmiles(smiles)
             qeds.append(qed(mol))
-        return self.beta * torch.tensor(qeds)
+        return torch.tensor(qeds).clip(min=1e-10).log()
 
     def compute_metrics(self, states: torch.Tensor) -> dict[str, torch.Tensor]:
         """Compute metrics for the given states.
@@ -131,8 +127,10 @@ class SELFIESSequenceModule(BaseSequenceModule):
         test_seq = []
 
         strings = [
-            "".join(random.choices(
-                self.atomic_tokens[1:], k=np.random.randint(5, self.max_len))
+            "".join(
+                random.choices(
+                    self.atomic_tokens[1:], k=np.random.randint(5, self.max_len)
+                )
             )
             for _ in range(1000)
         ]
@@ -144,8 +142,10 @@ class SELFIESSequenceModule(BaseSequenceModule):
             )
             s_tensor = torch.zeros(s_idx.shape[0], len(self.atomic_tokens))
             s_tensor[torch.arange(s_idx.shape[0]), s_idx] = 1
-            seq = torch.full((self.max_len + 1, s_tensor.shape[1]), -1, dtype=torch.float)
-            seq[:len(s_tensor)] = s_tensor
+            seq = torch.full(
+                (self.max_len + 1, s_tensor.shape[1]), -1, dtype=torch.float
+            )
+            seq[: len(s_tensor)] = s_tensor
             test_seq.append(seq)
         test_seq = torch.stack(test_seq, dim=0)
         test_rs = self.compute_logreward(test_seq)

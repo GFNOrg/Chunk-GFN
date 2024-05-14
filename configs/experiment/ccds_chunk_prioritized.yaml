@@ -1,0 +1,53 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+defaults:
+  - override /data: ccds.yaml
+  - override /gfn: tb_gfn_chunk_prioritized.yaml
+  - override /trainer: default.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+seed: 42
+
+data:
+  max_len: 32
+  num_modes: 6000
+  num_train_iterations: 100
+  sample_exact_length: True # Whether to always sample sequences of length `max_len` or not
+  threshold: 0.9
+  batch_size: 8
+
+trainer:
+  max_epochs: 1500
+  check_val_every_n_epoch: 20
+
+gfn:
+  forward_model:
+    _target_: chunkgfn.models.rnn.UnconditionalRNN
+    num_layers: 1
+    hidden_dim: 128
+    state_dim: 5
+    action_embedding_dim: ${gfn.action_model.action_embedding_dimension}
+    act:
+      _target_: torch.nn.ReLU
+
+  action_model:
+    _target_: chunkgfn.models.action_encoder.ActionModel
+    n_primitive_actions: 5
+
+  replay_buffer:
+    cutoff_distance: 6
+    capacity: 10000
+
+  reward_temperature: 0.3333
+  library_update_frequency: 25 # Frequency of updating the library
+  n_samples: 10000 # Number of samples to draw from the library
+  n_trajectories: 30
+
+logger:
+  wandb:
+    group: "ccds"

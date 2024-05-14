@@ -1,3 +1,5 @@
+import pickle
+
 import RNA
 import torch
 
@@ -96,22 +98,20 @@ def registry():
 
 
 class RNABindingModule(BaseSequenceModule):
-    """Naive SMILES building environment that constructs SMILES' one letter at a time,
-    with tokens extracted from ZINC-250k dataset. Does not enforce validity in any way,
-    and uses QED (drug-likeness) score as a reward if the SMILES is valid, near-zero
-    otherwise.
-    """
-
     def __init__(
         self,
         num_train_iterations: int,
         batch_size: int = 64,
         task: str = "L14_RNA1",
+        modes_path: str | None = None,
         num_workers: int = 0,
         pin_memory: bool = False,
         **kwargs,
     ) -> None:
-        atomic_tokens = ["<EOS>", "A", "C", "G", "U"]
+        # this line allows to access init params with 'self.hparams' attribute
+        # also ensures init params will be stored in ckpt
+        self.save_hyperparameters(logger=False)
+        atomic_tokens = ["A", "C", "G", "U"]
 
         self.task = task
         self.modes = []
@@ -123,7 +123,9 @@ class RNABindingModule(BaseSequenceModule):
         self.conserved_region = (
             params["conserved_region"] if "conserved_region" in params else None
         )
-
+        if modes_path is not None:
+            with open(modes_path, "rb") as f:
+                self.modes = pickle.load(f)
         super().__init__(
             atomic_tokens=atomic_tokens,
             max_len=params["seq_length"],
@@ -149,17 +151,17 @@ class RNABindingModule(BaseSequenceModule):
         return torch.tensor(min_energies)
 
     def compute_logreward(self, states: torch.Tensor) -> torch.Tensor:
-        """Compute the reward for the given states and action.
+        """Compute the logreward for the given states and action.
         Args:
             states (torch.Tensor[batch_size, max_len, dim]): Batch of states.
         Returns:
-            reward (torch.Tensor[batch_size]): Batch of rewards.
+            logreward (torch.Tensor[batch_size]): Batch of log rewards.
         """
         sequences = [
             s.replace("<EOS>", "") for s in self.to_strings(states)
         ]  # remove <EOS> tokens for computing reward
 
-        rewards = []
+        logrewards = []
         for seq in sequences:
             if len(seq) != self.max_len:
                 raise ValueError(
@@ -173,18 +175,18 @@ class RNABindingModule(BaseSequenceModule):
 
                 # If region not conserved, fitness is 0
                 if seq[start : start + len(pattern)] != pattern:
-                    rewards.append(0)
+                    logrewards.append(0)
                     continue
 
             # Energy is sum of binding energies across all targets
             energies = torch.tensor(
                 [RNA.duplexfold(target, seq).energy for target in self.targets]
             )
-            fitness = (energies / self.norm_values).mean()
+            fitness = (energies / self.norm_values).mean().clip(min=1e-10).log()
 
-            rewards.append(fitness)
+            logrewards.append(fitness)
 
-        return torch.tensor(rewards)
+        return torch.tensor(logrewards)
 
     def compute_metrics(self, states: torch.Tensor) -> dict[str, torch.Tensor]:
         """Compute metrics for the given states.
@@ -197,9 +199,14 @@ class RNABindingModule(BaseSequenceModule):
             s.replace("<EOS>", "") for s in self.to_strings(states)
         ]  # remove <EOS> tokens
         self.visited.update(set(strings))
+        if hasattr(self, "modes"):
+            unique_strings = set(strings)
+            modes_found = unique_strings.intersection(self.modes)
+            self.discovered_modes.update(modes_found)
 
         metrics = {
             "num_visited": float(len(self.visited)),
+            "num_modes": float(len(self.discovered_modes)),
         }
 
         return metrics
