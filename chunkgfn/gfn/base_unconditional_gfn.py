@@ -16,6 +16,8 @@ from chunkgfn.schedulers import Scheduler
 
 from ..constants import EPS, NEGATIVE_INFINITY
 
+import time
+import numpy as np
 
 class UnConditionalSequenceGFN(ABC, LightningModule):
     """Abstract class for sequence-based Generative Flow Networks."""
@@ -157,7 +159,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
 
     def go_backward(
         self,
-        final_state: torch.Tensor,
+        final_state: torch.Tensor
     ):
         """Sample backward trajectories conditioned on inputs.
         Args:
@@ -168,21 +170,39 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
             state (torch.Tensor[batch_size, *state_shape]): Final state.
         """
+
+        if self.hparams.pb == 'kolya':
+            terminal_strings = self.trainer.datamodule.to_strings(final_state)
+            logNs, mask_back_actions = self.trainer.datamodule.compute_logNs(terminal_strings, alpha = self.hparams.alpha_pb )      
         bs = final_state.shape[0]
         state = final_state.clone()
         done = torch.zeros((bs)).to(final_state).bool()
+
 
         # Start unrolling the trajectories
         actions = []
         trajectories = []
         dones = []
         dones.append(torch.ones((bs)).to(final_state).bool())
-
         while not done.all():
             backward_actions = self.trainer.datamodule.get_parent_actions(state)
-            logp_b_s = torch.where(
-                backward_actions == 1, torch.tensor(0.0), -torch.inf
-            ).to(state)
+            if self.hparams.pb == 'kolya':           
+                strings = self.trainer.datamodule.to_strings(state)
+                logp_b_s = self.trainer.datamodule.get_logpb_states(strings, terminal_strings, self.hparams.alpha_pb,  logNs, mask_back_actions) 
+                logp_b_s = logp_b_s.to(state) 
+            
+            elif self.hparams.pb == 'greedy' :
+                action_len = self.trainer.datamodule.action_len.unsqueeze(0).repeat(bs,1).to(state)
+                logp_b_s = - (action_len*self.hparams.alpha_pb).to(state)
+                logp_b_s[backward_actions==0]=-torch.inf
+            
+            elif self.hparams.pb == 'uniform':
+                logp_b_s = torch.where(
+                    backward_actions == 1, torch.tensor(0.0), -torch.inf
+                ).to(state)
+            
+            else:
+                raise ValueError('pb not defined. Choose in [kolya, greedy, uniform]')
             # When no action is available, just fill with uniform because
             # it won't be picked anyway in the backward_step.
             # Doing this avoids having nan when computing probabilities
@@ -203,7 +223,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
 
             state = new_state.clone()
 
-        trajectories.append(state)
+        trajectories.append(state) # why not inside the loop ? 
 
         trajectories = torch.stack(trajectories[::-1], dim=1)
         actions = torch.stack(actions[::-1], dim=1)
@@ -323,8 +343,9 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             dones (torch.Tensor[batch_size*n_trajectories, trajectory_length]): Whether the trajectory is done or not.
             logreward (torch.Tensor[batch_size*n_trajectories]): Log reward.
         """
+        unique_final_state = final_state
+        bs = unique_final_state.shape[0]
         # Repeat the final_state n_trajectories times
-        bs = final_state.shape[0]
         final_state = repeat(
             final_state, "b ... -> b n ...", n=self.hparams.n_trajectories
         )
@@ -332,10 +353,20 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         logreward = repeat(logreward, "b -> b n", n=self.hparams.n_trajectories)
         logreward = rearrange(logreward, "b n ... -> (b n) ... ")
         trajectories, actions, dones, final_state = self.go_backward(final_state)
-
+        
         # Calculate the log likelihood
         log_pf = 0
         log_pb = 0
+        if self.hparams.pb == 'kolya':
+            # Convert all trajectories to strings
+            str_trajectories = self.trainer.datamodule.to_strings_traj(trajectories, dones)
+            terminal_strings = [str_trajectories[i*self.hparams.n_trajectories][-1] for i in range(bs)]
+            #Compute logN
+            logNs, _ = self.trainer.datamodule.compute_logNs(terminal_strings, alpha = self.hparams.alpha_pb )
+            #Repeat for each trajectory
+            logNs = [logNs[i]   for i in range(len(unique_final_state)) for _ in range(self.hparams.n_trajectories)]
+            log_pb = self.trainer.datamodule.get_logpb_trajs(str_trajectories,self.hparams.alpha_pb, logNs)
+            
         for t in range(trajectories.shape[1]):
             state = trajectories[:, t]
             logit_pf = self.get_forward_logits(state)
@@ -343,24 +374,47 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
                 log_pf += (Categorical(logits=logit_pf).log_prob(actions[:, t])) * (
                     ~dones[:, t] + 0
                 )
-            if t > 0:
-                backward_actions = self.trainer.datamodule.get_parent_actions(state)
-                logp_b_s = torch.where(
-                    backward_actions == 1, torch.tensor(0.0), -torch.inf
-                ).to(logit_pf)
-                # When no action is available, just fill with uniform because it won't be picked anyway in the backward_step. Doing this avoids having nan when computing probabilities
-                logp_b_s = torch.where(
-                    (logp_b_s == -torch.inf).all(dim=-1).unsqueeze(1),
-                    torch.tensor(0.0),
-                    logp_b_s,
-                )
-                log_pb += torch.where(
-                    dones[:, t] | self.trainer.datamodule.is_initial_state(state),
-                    torch.tensor(0.0),
-                    Categorical(logits=logp_b_s).log_prob(actions[:, t - 1]),
-                )
+            if self.hparams.pb == 'greedy' :
+                if t > 0:
+                    backward_actions = self.trainer.datamodule.get_parent_actions(state)
+                    action_len = self.trainer.datamodule.action_len.unsqueeze(0).repeat(trajectories.shape[0],1).to(state)
+                    logp_b_s = - (action_len*self.hparams.alpha_pb).to(state)
+                    logp_b_s[backward_actions==0]=-torch.inf
+                    # When no action is available, just fill with uniform because it won't be picked anyway in the backward_step. Doing this avoids having nan when computing probabilities
+                    logp_b_s = torch.where(
+                        (logp_b_s == -torch.inf).all(dim=-1).unsqueeze(1),
+                        torch.tensor(0.0),
+                        logp_b_s,
+                    )
+                    log_pb += torch.where(
+                        dones[:, t] | self.trainer.datamodule.is_initial_state(state),
+                        torch.tensor(0.0),
+                        Categorical(logits=logp_b_s).log_prob(actions[:, t - 1]),
+                    )
+            elif self.hparams.pb == 'uniform': 
+                if t > 0:
+                    backward_actions = self.trainer.datamodule.get_parent_actions(state)
+                    logp_b_s = torch.where(
+                        backward_actions == 1, torch.tensor(0.0), -torch.inf
+                    ).to(logit_pf)
+                    # When no action is available, just fill with uniform because it won't be picked anyway in the backward_step. Doing this avoids having nan when computing probabilities
+                    logp_b_s = torch.where(
+                        (logp_b_s == -torch.inf).all(dim=-1).unsqueeze(1),
+                        torch.tensor(0.0),
+                        logp_b_s,
+                    )
+                    log_pb += torch.where(
+                        dones[:, t] | self.trainer.datamodule.is_initial_state(state),
+                        torch.tensor(0.0),
+                        Categorical(logits=logp_b_s).log_prob(actions[:, t - 1]),
+                    )
+            elif self.hparams.pb != 'kolya':
+                raise ValueError('pb not defined. Choose in [kolya, greedy, uniform]')
+        
+        log_pb = rearrange(log_pb, "(b n) ... -> b n ...", b=bs).to(final_state.device)       
         log_pf = rearrange(log_pf, "(b n) ... -> b n ...", b=bs)
-        log_pb = rearrange(log_pb, "(b n) ... -> b n ...", b=bs)
+        
+        assert log_pf.shape == log_pb.shape
         log_pT = torch.logsumexp(log_pf - log_pb, dim=1) - torch.log(
             torch.tensor(self.hparams.n_trajectories)
         )
@@ -519,8 +573,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             on_epoch=True,
             prog_bar=True,
         )
-        # self.log_action_histogram()
-
+        #self.log_action_histogram()
         for metric_name in additional_metrics:
             self.log(
                 f"train/{metric_name}",
