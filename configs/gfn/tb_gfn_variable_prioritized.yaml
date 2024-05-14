@@ -42,6 +42,5 @@ n_samples: 1000 # Number of samples to draw from the library
 weight_initialization: average # Weight initialization for the the new token
 n_chunks: 1 # Number of chunks to add per round
 chunk_algorithm: "bpe" # Algorithm to select chunks, can be either "uniform" or "bpe"
-use_pb_kolya: True # Use the PB-Kolya model
-use_pb_onelookahead: False # Use the PB-OneLookahead model
+pb: 'kolya' # Choose in the set {'kolya', 'uniform', 'greedy'}
 alpha_pb: -2 
