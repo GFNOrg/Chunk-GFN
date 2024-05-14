@@ -33,7 +33,7 @@ do
                 gfn.library_update_frequency=25 \
                 gfn.n_samples=10000 \
                 gfn.replay_buffer.cutoff_distance=${cutoff} \
-                gfn.reward_temperature=0.3333333333333333 \
+                gfn.reward_temperature=0.2 \
                 logger.wandb.name=${algo}_${length}_bpe \
                 logger.wandb.group=selfies    
             else
@@ -43,7 +43,7 @@ do
                 seed=${seed} \
                 data.max_len=${length} \
                 gfn.replay_buffer.cutoff_distance=${cutoff} \
-                gfn.reward_temperature=0.3333333333333333 \
+                gfn.reward_temperature=0.2 \
                 logger.wandb.name=${algo}_${length}_bpe \
                 logger.wandb.group=selfies  
             fi             
