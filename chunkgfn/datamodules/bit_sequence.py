@@ -26,6 +26,7 @@ class BitSequenceModule(BaseSequenceModule):
         **kwargs,
     ) -> None:
         atomic_tokens = [
+            # "<EOS>",  # Removed because it's appended in BaseSequenceModule.
             "0",
             "1",
         ]

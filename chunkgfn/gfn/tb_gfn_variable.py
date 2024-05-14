@@ -85,6 +85,7 @@ class TBGFN_Variable(UnConditionalSequenceGFN):
                             torch.tensor(0.0),
                             Categorical(logits=logp_b_s).log_prob(actions[:, t - 1]),
                         )
+                        #print('string trajectories', self.trainer.datamodule.to_strings_traj(trajectories, dones) )
                         #print('logp_b_s', logp_b_s)
                 else:
                     if t > 0:

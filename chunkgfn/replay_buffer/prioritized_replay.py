@@ -137,6 +137,9 @@ class PrioritizedReplay(ReplayBuffer):
                     batch = dict_curr_batch["final_state"].float()
                     buffer = self.storage["final_state"].float()
 
+                batch_lr = dict_curr_batch["logreward"].float()
+                buffer_lr = self.storage["logreward"].float()
+
                 # Filter the batch for diverse final_states with high reward.
                 batch_batch_dist = torch.cdist(
                     batch.view(curr_dim, -1).unsqueeze(0),
@@ -148,22 +151,37 @@ class PrioritizedReplay(ReplayBuffer):
                 batch_batch_dist[r, w] = torch.finfo(batch_batch_dist.dtype).max
                 batch_batch_dist = batch_batch_dist.min(-1)[0]
 
-                # Filter the batch for diverse final_states w.r.t the buffer.
-                batch_buffer_dist = (
-                    torch.cdist(
-                        batch.view(curr_dim, -1).unsqueeze(0),
-                        buffer.view(buffer_dim, -1).unsqueeze(0),
-                        p=1.0,
-                    )
-                    .squeeze(0)
-                    .min(-1)[0]
+                # We include examples from the batch assuming they are unique within the
+                # batch, and also either diverse relative to examples in the buffer, or
+                # if they are similar, they must have a higher reward than their
+                # comparable example currently in the buffer.
+                batch_buffer_dist = torch.cdist(
+                    batch.view(curr_dim, -1).unsqueeze(0),
+                    buffer.view(buffer_dim, -1).unsqueeze(0),
+                    p=1.0,
+                ).squeeze(0)
+
+                idx_batch = batch_batch_dist > self.cutoff_distance
+
+                # Case where the added examples are far from the buffer (diverse).
+                idx_batch_far_from_buffer = (
+                    batch_buffer_dist.min(-1)[0] > self.cutoff_distance
                 )
 
-                # Remove non-diverse examples accordin to the above distances.
-                idx_batch_batch = batch_batch_dist > self.cutoff_distance
-                idx_batch_buffer = batch_buffer_dist > self.cutoff_distance
-                idx_diverse = idx_batch_batch & idx_batch_buffer
-                _apply_idx(idx_diverse, dict_curr_batch)
+                # Case where the added examples are close to the buffer but have higher
+                # reward than their comparable.
+                idx_batch_lr_is_higher = batch_lr.unsqueeze(-1) > buffer_lr
+                idx_batch_close_to_buffer = batch_buffer_dist < self.cutoff_distance
+                idx_batch_beats_buffer = (
+                    idx_batch_close_to_buffer & idx_batch_lr_is_higher
+                ).any(-1)
+
+                # We add unique elements from the batch which are either diverse or
+                # give a higher reward.
+                idx_to_add = idx_batch & (
+                    idx_batch_far_from_buffer | idx_batch_beats_buffer
+                )
+                _apply_idx(idx_to_add, dict_curr_batch)
 
             # Concatenate everything, sort, and remove leftovers.
             for k, v in self.storage.items():
