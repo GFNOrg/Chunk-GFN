@@ -1,23 +1,22 @@
 tasks_cutoff=(
     "L14_RNA1,3",
     "L50_RNA1,10",
-    "L100_RNA1,20"
 )
 
 algorithms=(
     "rna_binding_chunk_prioritized"
     "rna_binding_chunk_replacement_prioritized"
-    "rna_binding_prioritized"
 )
 
 pbs=(
     "kolya"
     "greedy"
+    "uniform"
 )
 
-modes_path="${HOME}/chunkgfn/L14_RNA1_modes.pkl"
+modes_path="/home/mila/l/lena-nehale.ezzine/Chunk-GFN/L14_RNA1_modes.pkl"
 
-for seed in 1998 2024 42
+for seed in 1998
 do
     for algo in "${algorithms[@]}"
     do
@@ -39,7 +38,8 @@ do
                     data.task=${task} \
                     data.modes_path=${modes_path} \
                     gfn.chunk_algorithm=bpe \
-                    gfn.library_update_frequency=25 \
+                    gfn.library_update_frequency=10 \
+                    gfn.pb=${pb} \
                     gfn.n_samples=10000 \
                     gfn.replay_buffer.cutoff_distance=${cutoff} \
                     gfn.reward_temperature=0.125 \

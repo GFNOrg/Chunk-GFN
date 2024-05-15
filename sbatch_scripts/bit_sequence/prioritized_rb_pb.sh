@@ -12,6 +12,7 @@ algorithms=(
 pbs=(
     "kolya"
     "greedy"
+    "uniform"
 )
 
 for seed in 1998 2024 42
@@ -36,7 +37,8 @@ do
                     seed=${seed} \
                     data.max_len=${length} \
                     gfn.chunk_algorithm=bpe \
-                    gfn.library_update_frequency=25 \
+                    gfn.library_update_frequency=10 \
+                    gfn.pb=${pb} \
                     gfn.n_samples=10000 \
                     gfn.replay_buffer.cutoff_distance=${cutoff} \
                     gfn.reward_temperature=0.3333333333333333 \
