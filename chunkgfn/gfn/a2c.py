@@ -249,7 +249,9 @@ class A2C(ABC, LightningModule):
         states = rearrange(trajectories, "b t ... -> (b t) ...")
         # Since reward only given at the end, return=reward
         returns = logreward.repeat_interleave(trajectories.shape[1]).exp()
-        values = self.critic_model(states).squeeze()
+        values = self.critic_model(
+            self.trainer.datamodule.preprocess_states(states)
+        ).squeeze()
 
         advantage = returns - values
 
@@ -273,7 +275,8 @@ class A2C(ABC, LightningModule):
             b=trajectories.shape[0],
         )
         loss = torch.where(dones, 0, loss)
-        loss = loss.sum(1).mean()
+        loss = torch.clamp(loss.sum(1), max=5000, min=-5000)
+        loss = loss.mean()
 
         return loss
 
