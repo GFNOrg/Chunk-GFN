@@ -46,7 +46,7 @@ class BitSequenceModule(BaseSequenceModule):
 
         self.threshold = threshold
         self.modes_path = os.path.join(
-            Path(__file__).parent.parent,
+            Path(__file__).parent.parent.parent,
             f"modes_{self.max_len}.txt"
         )
 
