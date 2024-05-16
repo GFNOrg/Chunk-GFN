@@ -8,11 +8,7 @@ algorithms=(
     "bit_sequence_chunk_prioritized"
 )
 
-chunking_methods=(
-    "bpe",
-    "wordpiece",
-    "uniform"
-)
+chunking_methods=("bpe" "wordpiece" "uniform")
 
 for seed in 1998 2024 42
 do
@@ -40,8 +36,6 @@ do
             logger.wandb.name=bitseq_${chunk_method}_${length} \
             gfn.chunk_algorithm=${chunk_method} \
             logger.wandb.group=bs_chunking_algorithm
-            break
         done
     done
-    break
 done

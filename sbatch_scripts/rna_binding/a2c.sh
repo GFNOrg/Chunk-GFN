@@ -9,7 +9,7 @@ algorithms=(
     "rna_binding_prioritized_a2c"
 )
 
-modes_path="${HOME}/chunkgfn/L14_RNA1_modes.pkl"
+modes_path="${HOME}/code/chunkgfn/L14_RNA1_modes.pkl"
 
 for seed in 1998 2024 42
 do

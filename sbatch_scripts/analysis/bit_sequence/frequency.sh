@@ -23,7 +23,7 @@ do
             cutoff="${fields[1]}"
             cutoff=$((cutoff))
 
-            sbatch sbatch_scripts/analysis/bit_sequence.sh \
+            sbatch sbatch_scripts/analysis/bit_sequence/bit_sequence.sh \
             experiment=bit_sequence_chunk_prioritized \
             task_name=bit_sequence \
             seed=${seed} \
@@ -37,7 +37,6 @@ do
             gfn.chunk_algorithm=bpe \
             gfn.library_update_frequency=${freq} \
             logger.wandb.group=bs_frequency
-            
         done
     done
 done
