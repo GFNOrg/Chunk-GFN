@@ -5,13 +5,10 @@ maxlen_cutoff=(
 )
 
 algorithms=(
-    "bit_sequence_chunk_prioritized"
-    "bit_sequence_chunk_replacement_prioritized"
+    "bit_sequence_prioritized"
 )
 
 pbs=(
-    "kolya"
-    "greedy"
     "uniform"
 )
 

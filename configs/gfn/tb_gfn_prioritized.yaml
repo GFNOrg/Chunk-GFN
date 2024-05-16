@@ -37,3 +37,4 @@ ratio_from_replay_buffer: 0.55 # Ratio of samples from replay buffer
 n_trajectories: 1 # Number of test trajectories to sample
 reward_temperature: 0.33333 # Temperature for the reward
 n_onpolicy_samples: 512 # Number of on-policy samples to draw for each validation step
+pb: 'uniform' 
