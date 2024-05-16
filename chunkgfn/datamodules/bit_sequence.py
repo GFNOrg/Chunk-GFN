@@ -3,6 +3,7 @@ import os
 import numpy as np
 import torch
 from polyleven import levenshtein
+from pathlib import Path
 
 from .base_sequence import BaseSequenceModule
 
@@ -44,7 +45,10 @@ class BitSequenceModule(BaseSequenceModule):
         )
 
         self.threshold = threshold
-        self.modes_path = f"{os.environ['HOME']}/Chunk-GFN/modes_{self.max_len}.txt"
+        self.modes_path = os.path.join(
+            Path(__file__).parent.parent,
+            f"modes_{self.max_len}.txt"
+        )
 
         self.create_modes()
 
