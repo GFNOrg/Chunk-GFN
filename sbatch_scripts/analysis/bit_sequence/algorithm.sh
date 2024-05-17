@@ -34,7 +34,6 @@ do
             gfn.replay_buffer.cutoff_distance=${cutoff} \
             gfn.reward_temperature=0.3333333333333333 \
             logger.wandb.name=bitseq_${chunk_method}_${length} \
-            gfn.chunk_algorithm=${chunk_method} \
             logger.wandb.group=bs_chunking_algorithm
         done
     done
