@@ -1,105 +1,39 @@
-from abc import ABC, abstractmethod
 from typing import Any, Tuple
 
 import torch
 import wandb
-from einops import rearrange, repeat
+from einops import repeat
 from lightning import LightningModule
 from torch import nn
 from torch.distributions import Categorical
 from torchmetrics import MeanMetric, SpearmanCorrCoef
 
-from chunkgfn.gfn.utils import has_trainable_parameters
 from chunkgfn.replay_buffer.base_replay_buffer import ReplayBuffer
 from chunkgfn.replay_buffer.utils import extend_trajectories
-from chunkgfn.schedulers import Scheduler
 
-from ..constants import EPS, NEGATIVE_INFINITY
+from ..constants import NEGATIVE_INFINITY
 
 
-class A2C(ABC, LightningModule):
-    """Abstract class for RL algos."""
+class RandomSampler(LightningModule):
+    """Abstract class for sequence-based Generative Flow Networks."""
 
     def __init__(
         self,
-        forward_model: torch.nn.Module,
-        critic_model: torch.nn.Module,
-        action_model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler,
-        epsilon_scheduler: Scheduler | None = None,
-        temperature_scheduler: Scheduler | None = None,
         replay_buffer: ReplayBuffer | None = None,
         **kwargs,
     ):
         super().__init__()
         self.save_hyperparameters(logger=False)
 
-        # GFlowNet modules
-        self.forward_model = forward_model
-        self.critic_model = critic_model
-        self.action_model = action_model
-
-        # Schedulers for off-policy training
-        self.epsilon_scheduler = epsilon_scheduler
-        self.temperature_scheduler = temperature_scheduler
-
         self.replay_buffer = replay_buffer
 
-        # Metric managers
-        self.train_loss = MeanMetric()
-        self.val_loss = MeanMetric()
         self.train_logreward = MeanMetric()
         self.val_logreward = MeanMetric()
-        self.train_logZ = MeanMetric()
         self.train_trajectory_length = MeanMetric()
         self.val_correlation = (
             SpearmanCorrCoef()
         )  # Correlation between likelihood and logreward
-
-    def configure_optimizers(self):
-        params = []
-        if self.forward_model is not None and has_trainable_parameters(
-            self.forward_model
-        ):
-            params.append(
-                {
-                    "params": self.forward_model.parameters(),
-                    "lr": self.hparams.forward_lr,
-                }
-            )
-        if self.action_model is not None and has_trainable_parameters(
-            self.action_model
-        ):
-            params.append(
-                {
-                    "params": self.action_model.parameters(),
-                    "lr": self.hparams.action_lr,
-                }
-            )
-        if self.critic_model is not None and has_trainable_parameters(
-            self.critic_model
-        ):
-            params.append(
-                {
-                    "params": self.critic_model.parameters(),
-                    "lr": self.hparams.critic_lr,
-                }
-            )
-
-        optimizer = self.hparams.optimizer(params=params)
-        if self.hparams.scheduler is not None:
-            scheduler = self.hparams.scheduler(optimizer=optimizer)
-            return {
-                "optimizer": optimizer,
-                "lr_scheduler": {
-                    "scheduler": scheduler,
-                    "monitor": self.hparams.monitor,
-                    "interval": "epoch",
-                    "frequency": 1,
-                },
-            }
-        return {"optimizer": optimizer}
 
     @torch.no_grad()
     def refactor_replay_buffer(self):
@@ -114,45 +48,76 @@ class A2C(ABC, LightningModule):
             self.replay_buffer.storage["actions"] = actions
             self.replay_buffer.storage["dones"] = dones
 
-    def get_library_embeddings(self):
-        """Produce embedding for all actions in the library.
-        Returns:
-            library_embeddings (torch.Tensor[n_actions, action_embedding]): Embeddings for all actions.
-        """
-        action_indices = self.trainer.datamodule.action_indices
-        library_embeddings = []
-        for action, indices in action_indices.items():
-            library_embeddings.append(
-                self.action_model(
-                    torch.LongTensor(indices).to(self.device).unsqueeze(0)
-                )
-            )
-        library_embeddings = torch.cat(library_embeddings, dim=0)
-        return library_embeddings
+    def configure_optimizers(self):
+        params = [
+            {
+                "params": nn.Parameter(torch.zeros(1)),
+                "lr": 0,
+            }
+        ]  # dummy params for lightning not to complain
 
-    def get_forward_logits(self, state: torch.Tensor) -> torch.Tensor:
-        """Get the forward logits for the given state.
+        optimizer = self.hparams.optimizer(params=params)
+        return {"optimizer": optimizer}
+
+    def go_backward(
+        self,
+        final_state: torch.Tensor,
+    ):
+        """Sample backward trajectories conditioned on inputs.
         Args:
-            state (torch.Tensor[batch_size, *state_shape]): State.
+            final_state (torch.Tensor[batch_size, *state_shape]): Final state.
         Return:
-            logits (torch.Tensor[batch_size, n_actions]): Forward logits.
+            trajectories (torch.Tensor[batch_size, trajectory_length, *state_shape]): Trajectories for each sample in the batch.
+            actions (torch.Tensor[batch_size, trajectory_length]): Actions for each sample in the batch.
+            dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
+            state (torch.Tensor[batch_size, *state_shape]): Final state.
         """
-        action_embedding = self.forward_model(
-            self.trainer.datamodule.preprocess_states(state)
-        )
-        dim = action_embedding.shape[-1]
-        library_embeddings = self.get_library_embeddings()
-        logits = torch.einsum("bd, nd -> bn", action_embedding, library_embeddings) / (
-            dim**0.5
-        )  # Same as in softmax
-        return logits
+        bs = final_state.shape[0]
+        state = final_state.clone()
+        done = torch.zeros((bs)).to(final_state).bool()
+
+        # Start unrolling the trajectories
+        actions = []
+        trajectories = []
+        dones = []
+        dones.append(torch.ones((bs)).to(final_state).bool())
+
+        while not done.all():
+            backward_actions = self.trainer.datamodule.get_parent_actions(state)
+            logp_b_s = torch.where(
+                backward_actions == 1, torch.tensor(0.0), -torch.inf
+            ).to(state)
+            # When no action is available, just fill with uniform because
+            # it won't be picked anyway in the backward_step.
+            # Doing this avoids having nan when computing probabilities
+            logp_b_s = torch.where(
+                (logp_b_s == -torch.inf).all(dim=-1).unsqueeze(1),
+                torch.tensor(0.0),
+                logp_b_s,
+            )
+            cat = Categorical(logits=logp_b_s)
+
+            act = cat.sample()
+
+            new_state, done = self.trainer.datamodule.backward_step(state, act)
+
+            actions.append(act)
+            trajectories.append(state)
+            dones.append(done.clone())
+
+            state = new_state.clone()
+
+        trajectories.append(state)
+
+        trajectories = torch.stack(trajectories[::-1], dim=1)
+        actions = torch.stack(actions[::-1], dim=1)
+        dones = torch.stack(dones[::-1], dim=1)
+
+        return trajectories, actions, dones, final_state
 
     def forward(
         self,
         batch_size: int,
-        train: bool = True,
-        epsilon: float | None = None,
-        temperature: float | None = None,
     ):
         """Sample forward trajectories conditioned on inputs.
         Args:
@@ -181,38 +146,19 @@ class A2C(ABC, LightningModule):
         )  # This tracks the length of trajectory for each sample in the batch
 
         while not done.all():
-            logit_pf = self.get_forward_logits(state)
+            forward_actions = self.trainer.datamodule.get_forward_mask(state)
+            logit_pf = torch.where(
+                forward_actions == 1, torch.tensor(0.0), torch.tensor(NEGATIVE_INFINITY)
+            ).to(state)
             uniform_dist_probs = torch.ones_like(logit_pf).to(logit_pf)
 
-            valid_actions_mask = self.trainer.datamodule.get_forward_mask(state)
-
-            logit_pf = torch.where(
-                valid_actions_mask,
-                logit_pf,
-                torch.tensor(NEGATIVE_INFINITY).to(logit_pf),
-            )
             uniform_dist_probs = torch.where(
-                valid_actions_mask,
+                forward_actions,
                 uniform_dist_probs,
                 torch.tensor(0.0).to(uniform_dist_probs),
             )
 
-            if train:
-                if temperature is not None:
-                    logits = logit_pf / (EPS + temperature)
-                else:
-                    logits = logit_pf
-                if epsilon is not None:
-                    probs = torch.softmax(logits, dim=-1)
-                    uniform_dist_probs = uniform_dist_probs / uniform_dist_probs.sum(
-                        dim=-1, keepdim=True
-                    )
-                    probs = (1 - epsilon) * probs + epsilon * uniform_dist_probs
-                    cat = Categorical(probs=probs)
-                else:
-                    cat = Categorical(logits=logits)
-            else:
-                cat = Categorical(logits=logit_pf)
+            cat = Categorical(logits=logit_pf)
 
             act = cat.sample()
 
@@ -233,64 +179,14 @@ class A2C(ABC, LightningModule):
 
         return trajectories, actions, dones, state, trajectory_length
 
-    def compute_loss(self, trajectories, actions, dones, logreward):
-        """Compute the loss for the model.
-        Args:
-            trajectories (torch.Tensor[batch_size, trajectory_length, *state_shape]): Trajectories for each sample in the batch.
-            actions (torch.Tensor[batch_size, trajectory_length]): Actions for each sample in the batch.
-            dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
-            logreward (torch.Tensor[batch_size]): Log reward.
-        """
-
-        # We don't compute the value and policy loss for the final state
-        trajectories = trajectories[:, :-1]
-        dones = dones[:, :-1]
-
-        states = rearrange(trajectories, "b t ... -> (b t) ...")
-        # Since reward only given at the end, return=reward
-        returns = logreward.repeat_interleave(trajectories.shape[1]).exp()
-        values = self.critic_model(
-            self.trainer.datamodule.preprocess_states(states)
-        ).squeeze()
-
-        advantage = returns - values
-
-        logits = self.get_forward_logits(states)
-        forward_mask = self.trainer.datamodule.get_forward_mask(states)
-        logits = torch.where(
-            forward_mask,
-            logits,
-            torch.tensor(NEGATIVE_INFINITY).to(logits),
-        )
-
-        value_loss = advantage.pow(2)
-        policy_loss = -advantage.detach() * Categorical(logits=logits).log_prob(
-            rearrange(actions, "b t ... -> (b t) ...")
-        )
-        entropy_loss = Categorical(logits=logits).entropy()
-
-        loss = rearrange(
-            (value_loss + policy_loss - self.hparams.entropy_coeff * entropy_loss),
-            "(b t) -> b t",
-            b=trajectories.shape[0],
-        )
-        loss = torch.where(dones, 0, loss)
-        loss = torch.clamp(loss.sum(1), max=5000, min=-5000)
-        loss = loss.mean()
-
-        return loss
-
     def sample(
         self,
         batch: torch.Tensor,
-        train: bool = True,
-        epsilon: float = 0.0,
-        temperature: float = 0.0,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = batch
 
         trajectories, actions, dones, final_state, trajectory_length = self.forward(
-            x.shape[0], train=train, epsilon=epsilon, temperature=temperature
+            x.shape[0]
         )
 
         logreward = self.trainer.datamodule.compute_logreward(final_state).to(
@@ -306,22 +202,30 @@ class A2C(ABC, LightningModule):
             trajectory_length,
         )
 
-    def training_step(self, train_batch, batch_idx) -> Any:
-        if self.epsilon_scheduler is not None:
-            epsilon = self.epsilon_scheduler.step(self.current_epoch)
-        else:
-            epsilon = None
-        if self.temperature_scheduler is not None:
-            temperature = self.temperature_scheduler.step(self.current_epoch)
-        else:
-            temperature = None
+    def log_action_histogram(self):
+        """Log the action histogram."""
+        normalizing_constant = self.trainer.datamodule.action_frequency.sum()
+        action_frequency = [
+            [freq / normalizing_constant, action]
+            for (freq, action) in zip(
+                self.trainer.datamodule.action_frequency,
+                self.trainer.datamodule.actions,
+            )
+        ]
+        table = wandb.Table(data=action_frequency, columns=["frequency", "action"])
 
+        self.logger.log_metrics(
+            {
+                "action_histogram": wandb.plot.bar(
+                    table, "action", "frequency", title="Action Frequency"
+                )
+            }
+        )
+
+    def training_step(self, train_batch, batch_idx) -> Any:
         x, trajectories, actions, dones, final_state, logreward, trajectory_length = (
             self.sample(
                 train_batch,
-                train=True,
-                epsilon=epsilon,
-                temperature=temperature,
             )
         )
         batch_size = x.shape[0]
@@ -359,14 +263,11 @@ class A2C(ABC, LightningModule):
             )
             logreward = torch.cat([logreward[indices], samples["logreward"]], dim=0)
 
-        loss = self.compute_loss(trajectories, actions, dones, logreward)
         additional_metrics = self.trainer.datamodule.compute_metrics(final_state)
 
-        self.train_loss(loss)
         self.train_logreward(logreward.mean())
         self.train_trajectory_length(trajectory_length.float().mean())
 
-        self.log("train/loss", self.train_loss, on_step=True, prog_bar=True)
         self.log(
             "train/logreward",
             self.train_logreward,
@@ -375,12 +276,6 @@ class A2C(ABC, LightningModule):
             prog_bar=True,
         )
 
-        if self.epsilon_scheduler is not None:
-            self.log("epsilon", epsilon, on_step=False, on_epoch=True, prog_bar=False)
-        if self.temperature_scheduler is not None:
-            self.log(
-                "temperature", epsilon, on_step=False, on_epoch=True, prog_bar=False
-            )
         if self.replay_buffer is not None:
             self.log(
                 "replay_buffer_size",
@@ -414,10 +309,10 @@ class A2C(ABC, LightningModule):
                 prog_bar=True,
             )
 
-        return loss
+        return None
 
     def on_validation_epoch_end(self):
-        # Get on-policy samples from the policy
+        # Get on-policy samples from the GFN
         dummy_batch = torch.arange(self.hparams.n_onpolicy_samples).to(self.device)
         x, trajectories, actions, dones, final_state, logreward, trajectory_length = (
             self.sample(

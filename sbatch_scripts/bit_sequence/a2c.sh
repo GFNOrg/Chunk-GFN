@@ -5,9 +5,8 @@ maxlen_cutoff=(
 )
 
 algorithms=(
-    "bit_sequence_chunk_prioritized"
-    "bit_sequence_chunk_replacement_prioritized"
-    "bit_sequence_prioritized"
+    "bit_sequence_chunk_prioritized_a2c"
+    "bit_sequence_prioritized_a2c"
 )
 
 for seed in 1998 2024 42

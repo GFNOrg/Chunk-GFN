@@ -1,20 +1,19 @@
-maxlen_cutoff=(
-    "32,6",
-    "64,12",
-    "128,25"
+length_cutoff=(
+    "10,1",
+    "20,2",
+    "40,4"
 )
 
 algorithms=(
-    "bit_sequence_chunk_prioritized"
-    "bit_sequence_chunk_replacement_prioritized"
-    "bit_sequence_prioritized"
+    "selfies_chunk_prioritized_a2c"
+    "selfies_prioritized_a2c"
 )
 
 for seed in 1998 2024 42
 do
     for algo in "${algorithms[@]}"
     do
-        for task in "${maxlen_cutoff[@]}"
+        for task in "${length_cutoff[@]}"
         do
             IFS=',' read -r -d '' -a fields <<< "$task"
 
@@ -24,29 +23,29 @@ do
             cutoff=$((cutoff))
 
             if [[ $algo == *"chunk"* ]]; then
-                sbatch sbatch_scripts/bit_sequence/bit_sequence.sh \
+                sbatch sbatch_scripts/selfies/selfies.sh \
                 experiment=${algo} \
-                task_name=bit_sequence \
+                task_name=selfies \
                 seed=${seed} \
                 data.max_len=${length} \
                 gfn.chunk_algorithm=bpe \
-                gfn.library_update_frequency=10 \
+                gfn.library_update_frequency=25 \
                 gfn.n_samples=10000 \
                 gfn.replay_buffer.cutoff_distance=${cutoff} \
-                gfn.reward_temperature=0.3333333333333333 \
+                gfn.reward_temperature=0.2 \
                 logger.wandb.name=${algo}_${length}_bpe \
-                logger.wandb.group=bit_sequence    
+                logger.wandb.group=selfies    
             else
-                sbatch sbatch_scripts/bit_sequence/bit_sequence.sh \
+                sbatch sbatch_scripts/selfies/selfies.sh \
                 experiment=${algo} \
-                task_name=bit_sequence \
+                task_name=selfies \
                 seed=${seed} \
                 data.max_len=${length} \
                 gfn.replay_buffer.cutoff_distance=${cutoff} \
-                gfn.reward_temperature=0.3333333333333333 \
+                gfn.reward_temperature=0.2 \
                 logger.wandb.name=${algo}_${length}_bpe \
-                logger.wandb.group=bit_sequence  
-            fi        
+                logger.wandb.group=selfies  
+            fi             
         done
     done
 done

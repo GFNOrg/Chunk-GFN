@@ -11,5 +11,6 @@ eval "$(conda shell.bash hook)"
 conda activate chunkgfn
 
 export WANDB_MODE="offline"
+export HYDRA_FULL_ERROR=1
 exec python main.py "$@"
 

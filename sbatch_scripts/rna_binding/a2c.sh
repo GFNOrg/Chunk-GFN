@@ -5,9 +5,8 @@ tasks_cutoff=(
 )
 
 algorithms=(
-    "rna_binding_chunk_prioritized"
-    "rna_binding_chunk_replacement_prioritized"
-    "rna_binding_prioritized"
+    "rna_binding_chunk_prioritized_a2c"
+    "rna_binding_prioritized_a2c"
 )
 
 modes_path="${HOME}/code/chunkgfn/L14_RNA1_modes.pkl"

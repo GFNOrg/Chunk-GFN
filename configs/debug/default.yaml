@@ -23,3 +23,10 @@ hydra:
       level: DEBUG
 
 resume: False
+
+# Add a profiler
+trainer:
+  profiler:
+    _target_: lightning.pytorch.profilers.AdvancedProfiler
+    dirpath: ${paths.output_dir}
+    filename: "advanced_profiling"
