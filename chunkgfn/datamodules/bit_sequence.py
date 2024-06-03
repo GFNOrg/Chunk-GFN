@@ -1,9 +1,9 @@
 import os
+from pathlib import Path
 
 import numpy as np
 import torch
 from polyleven import levenshtein
-from pathlib import Path
 
 from .base_sequence import BaseSequenceModule
 
@@ -28,7 +28,6 @@ class BitSequenceModule(BaseSequenceModule):
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(logger=False)
         atomic_tokens = [
-            # "<EOS>",  # Removed because it's appended in BaseSequenceModule.
             "0",
             "1",
         ]
@@ -46,8 +45,7 @@ class BitSequenceModule(BaseSequenceModule):
 
         self.threshold = threshold
         self.modes_path = os.path.join(
-            Path(__file__).parent.parent.parent,
-            f"modes_{self.max_len}.txt"
+            Path(__file__).parent.parent.parent, f"modes_{self.max_len}.txt"
         )
 
         self.create_modes()
@@ -72,7 +70,7 @@ class BitSequenceModule(BaseSequenceModule):
             reward (torch.Tensor[batch_size]): Batch of rewards.
         """
         strings = [
-            s.replace("<EOS>", "") for s in self.to_strings(states)
+            s.replace(self.exit_action, "") for s in self.to_strings(states)
         ]  # remove <EOS> tokens for computing reward
 
         dists = torch.tensor([[levenshtein(s, i) for i in self.modes] for s in strings])
@@ -88,7 +86,7 @@ class BitSequenceModule(BaseSequenceModule):
             metrics (dict[str, torch.Tensor]): Dictionary of metrics.
         """
         strings = [
-            s.replace("<EOS>", "") for s in self.to_strings(states)
+            s.replace(self.exit_action, "") for s in self.to_strings(states)
         ]  # remove <EOS> tokens
         self.visited.update(set(strings))
         dists = torch.tensor([[levenshtein(s, i) for i in self.modes] for s in strings])
@@ -131,7 +129,7 @@ class BitSequenceModule(BaseSequenceModule):
                 s = noise_seq(m, n)
                 s_idx = torch.tensor(
                     [self.atomic_tokens.index(char) for char in s]
-                    + [self.atomic_tokens.index("<EOS>")]
+                    + [self.atomic_tokens.index(self.exit_action)]
                 )
                 s_tensor = torch.zeros(s_idx.shape[0], len(self.atomic_tokens))
                 s_tensor[torch.arange(s_idx.shape[0]), s_idx] = 1

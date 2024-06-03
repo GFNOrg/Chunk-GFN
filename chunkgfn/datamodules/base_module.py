@@ -11,17 +11,20 @@ from tokenizers.trainers import BpeTrainer, WordPieceTrainer
 from torch.utils.data import DataLoader, Dataset
 
 
-class BaseEnvironmentModule(LightningDataModule, ABC):
-    """A `BaseEnvironmentModule` for defining environment datamodules."""
+class BaseUnConditionalEnvironmentModule(LightningDataModule, ABC):
+    """A `BaseUnConditionalEnvironmentModule` for defining unconditional
+    environment datamodules.
+    """
 
     def __init__(
         self,
+        num_train_iterations: int,
         batch_size: int = 64,
         num_workers: int = 0,
         pin_memory: bool = False,
         persistent_workers: bool = True,
     ) -> None:
-        """Initialize the `BaseEnvironmentModule`.
+        """Initialize the `BaseUnConditionalEnvironmentModule`.
         Args:
             batch_size (int): The batch size. Defaults to 64.
             num_workers (int): The number of workers for the dataloaders. Defaults to 0.
@@ -35,7 +38,8 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         self.data_test: Optional[Dataset] = None
         self.persistent_workers = persistent_workers
         self.exit_action = "<EOS>"
-        self.exit_action = "<EOS>"
+
+        self.num_train_iterations = num_train_iterations
 
     @abstractmethod
     def preprocess_states(self, state: torch.Tensor) -> torch.Tensor:
@@ -47,24 +51,34 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
         """
         NotImplementedError
 
-    @abstractmethod
     def setup(self, stage: Optional[str] = None) -> None:
-        """Load data. Set variables: `self.data_train`, `self.data_val`, `self.data_test`.
+        """Instantiate dummy datasets for the trainer to use."""
 
-        This method is called by Lightning before `trainer.fit()`, `trainer.validate()`, `trainer.test()`, and
-        `trainer.predict()`, so be careful not to execute things like random split twice! Also, it is called after
-        `self.prepare_data()` and there is a barrier in between which ensures that all the processes proceed to
-        `self.setup()` once the data is prepared and available for use.
+        class DummyDataset(Dataset):
+            def __init__(self, num_elements):
+                self.num_elements = num_elements
 
-        :param stage: The stage to setup. Either `"fit"`, `"validate"`, `"test"`, or `"predict"`. Defaults to ``None``.
-        """
+            def __len__(self):
+                return self.num_elements
+
+            def __getitem__(self, index):
+                return index
+
+        self.data_train = DummyDataset(
+            self.num_train_iterations * self.hparams.batch_size
+        )
+        self.setup_val_test_datasets()
+
+    @abstractmethod
+    def setup_val_test_datasets(self):
+        """Instantiate datasets for the val and test dataloaders to use."""
         NotImplementedError
 
     @abstractmethod
     def is_initial_state(self, state: torch.Tensor) -> bool:
         """Check if the state is the initial state.
         Args:
-            state (torch.Tensor[batch_size, max_len, dim]): Batch of states.
+            state (torch.Tensor[batch_size, *state_shape]): Batch of states.
         Returns:
             is_initial (bool): Whether the state is the initial state or not.
         """
@@ -116,10 +130,10 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
     def forward_step(self, state: torch.Tensor, forward_action: torch.Tensor):
         """Change the state after you apply the forward action.
         Args:
-            state (torch.Tensor[batch_size, max_len, dim]): Batch of states.
+            state (torch.Tensor[batch_size, *state_shape]): Batch of states.
             forward_action (torch.Tensor[batch_size]): Batch of forward actions. Each element corresponds to the index of the action.
         Returns:
-            new_state (torch.Tensor[batch_size, max_len, dim]): Batch of new states.
+            new_state (torch.Tensor[batch_size, *state_shape]): Batch of new states.
             done (torch.Tensor[batch_size]): Whether the trajectory is done or not.
         """
         NotImplementedError
@@ -128,29 +142,39 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
     def backward_step(self, state: torch.Tensor, backward_action: torch.Tensor):
         """Change the state after you apply the backward action.
         Args:
-            state (torch.Tensor[batch_size, max_len, dim]): Batch of states.
+            state (torch.Tensor[batch_size, *state_shape]): Batch of states.
             backward_action (torch.Tensor[batch_size]): Batch of backward actions. Each element corresponds to the index of the action.
         Returns:
-            new_state (torch.Tensor[batch_size, max_len, dim]): Batch of new states.
+            new_state (torch.Tensor[batch_size, *state_shape]): Batch of new states.
+            done (torch.Tensor[batch_size]): Whether the trajectory is done or not.
         """
         NotImplementedError
 
     @abstractmethod
     def get_forward_mask(self, states: torch.Tensor):
-        """Get the invalid actions mask for a batch of states.
+        """Get the forward actions mask for a batch of states.
         Args:
-            states (torch.Tensor[batch_size, max_len, dim]): Batch of states.
+            states (torch.Tensor[batch_size, *state_shape]): Batch of states.
         Returns:
-            actions_mask (torch.Tensor[batch_size, n_actions]): Invalid actions mask.
+            actions_mask (torch.Tensor[batch_size, n_actions]): Forward actions mask.
         """
         NotImplementedError
 
     @abstractmethod
-    def compute_logreward(self, inputs: torch.Tensor, states: torch.Tensor):
-        """Compute the logreward for a batch of sentences.
+    def get_backward_mask(self, states: torch.Tensor):
+        """Get the backward actions mask of a batch of states.
         Args:
-            inputs (torch.Tensor[batch_size, max_len, input_vocab_dim]): Batch of inputs.
-            states (torch.Tensor[batch_size, max_len, state_vocab_dim]): Batch of states.
+            states (torch.Tensor[batch_size, *state_shape]): Batch of states.
+        Returns:
+            actions_mask (torch.Tensor[batch_size, n_actions]): Backward actions mask.
+        """
+        NotImplementedError
+
+    @abstractmethod
+    def compute_logreward(self, states: torch.Tensor):
+        """Compute the logreward for a batch of states.
+        Args:
+            states (torch.Tensor[batch_size, *state_shape]): Batch of states.
         """
         NotImplementedError
 
@@ -295,59 +319,3 @@ class BaseEnvironmentModule(LightningDataModule, ABC):
             self.action_frequency = torch.cat(
                 [self.action_frequency[:idx], self.action_frequency[idx + 1 :]], dim=0
             )
-
-    @abstractmethod
-    def get_parent_actions(self, states: torch.Tensor):
-        """Get the parent actions of a batch of states.
-        Args:
-            states (torch.Tensor[batch_size, max_len, state_vocab_dim]): Batch of states.
-        """
-        NotImplementedError
-
-
-class BaseUnconditionalEnvironmentModule(BaseEnvironmentModule):
-    """A `BaseUnconditionalEnvironmentModule` for defining unconditional environment datamodules.
-    Since it's an environment meant for unconditional generation, it doesn't require any dataset, but we'll make a dummy one.
-    """
-
-    def __init__(
-        self,
-        num_train_iterations: int,
-        batch_size: int = 64,
-        num_workers: int = 0,
-        pin_memory: bool = False,
-        **kwargs,
-    ) -> None:
-        super().__init__(batch_size, num_workers, pin_memory, **kwargs)
-        """Initialize the `BaseUnconditionalEnvironmentModule`.
-        Args:
-            num_train_iterations (int): The number of training iterations per epoch.
-            batch_size (int): The batch size. Defaults to 64.
-            num_workers (int): The number of workers for the dataloaders. Defaults to 0.
-            pin_memory (bool): Whether to pin memory for the dataloaders. Defaults to False.
-
-        """
-        self.num_train_iterations = num_train_iterations
-
-    def setup(self, stage: Optional[str] = None) -> None:
-        """Instantiate dummy datasets for the trainer to use."""
-
-        class DummyDataset(Dataset):
-            def __init__(self, num_elements):
-                self.num_elements = num_elements
-
-            def __len__(self):
-                return self.num_elements
-
-            def __getitem__(self, index):
-                return index
-
-        self.data_train = DummyDataset(
-            self.num_train_iterations * self.hparams.batch_size
-        )
-        self.setup_val_test_datasets()
-
-    @abstractmethod
-    def setup_val_test_datasets(self):
-        """Instantiate datasets for the val and test dataloaders to use."""
-        NotImplementedError
