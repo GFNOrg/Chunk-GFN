@@ -4,8 +4,8 @@
 # python train.py experiment=example
 
 defaults:
-  - override /data: bit_sequence.yaml
-  - override /gfn: tb_gfn_prioritized.yaml
+  - override /environment: bit_sequence.yaml
+  - override /algo: tb_gfn.yaml
   - override /trainer: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
@@ -19,23 +19,34 @@ trainer:
   max_epochs: 1500
   check_val_every_n_epoch: 20
 
-gfn:
-  forward_model:
+algo:
+  forward_policy:
     _target_: chunkgfn.models.rnn.UnconditionalRNN
     num_layers: 1
     hidden_dim: 128
     state_dim: 3
-    action_embedding_dim: ${gfn.action_model.action_embedding_dimension}
+    action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
+    act:
+      _target_: torch.nn.ReLU
+
+  backward_policy:
+    _target_: chunkgfn.models.rnn.UnconditionalRNN
+    num_layers: 1
+    hidden_dim: 128
+    state_dim: 3
+    action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
     act:
       _target_: torch.nn.ReLU
   
-  action_model:
+  action_embedder:
     _target_: chunkgfn.models.action_encoder.ActionModel
     n_primitive_actions: 3
   
   replay_buffer:
-    cutoff_distance: 3
+    _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
     capacity: 10000
+    cutoff_distance: 5
+    is_conditional: False
   reward_temperature: 0.3333
 
 logger:

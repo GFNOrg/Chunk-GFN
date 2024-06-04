@@ -1,4 +1,4 @@
-_target_: chunkgfn.gfn.tb_gfn.TBGFN
+_target_: chunkgfn.algo.tb_gfn.TBGFN
 
 optimizer:
   _target_: torch.optim.Adam
@@ -7,11 +7,11 @@ optimizer:
 
 scheduler: null
 
-forward_model: null
+forward_policy: null
   
-backward_model: null
+backward_policy: null
 
-action_model:
+action_embedder:
   _target_: chunkgfn.models.action_encoder.ActionModel
   n_primitive_actions: 3
   hidden_dim: 128
@@ -23,17 +23,20 @@ epsilon_scheduler:
   final_value: 0.1
   max_epochs: ${trainer.max_epochs}
 
-replay_buffer:
-  _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
-  capacity: 10000
-  cutoff_distance: 1.4
-  is_conditional: False
+replay_buffer: null
 
-forward_lr: 1e-4
+forward_policy_lr: 1e-4
+backward_policy_lr: 1e-4
 partition_lr: 1e-3
-action_lr: 1e-4
+action_embedder_lr: 1e-4
 monitor: val/logreward
 ratio_from_replay_buffer: 0.55 # Ratio of samples from replay buffer
 n_trajectories: 1 # Number of test trajectories to sample
 reward_temperature: 0.33333 # Temperature for the reward
 n_onpolicy_samples: 512 # Number of on-policy samples to draw for each validation step
+
+chunk_algorithm: bpe
+chunk_type: replacement
+library_update_frequency: 2
+total_library_size: 20
+n_samples: 5000
