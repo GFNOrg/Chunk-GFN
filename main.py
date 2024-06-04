@@ -57,11 +57,11 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     if cfg.get("seed"):
         L.seed_everything(cfg.seed, workers=True)
 
-    log.info(f"Instantiating datamodule <{cfg.data._target_}>")
-    datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
+    log.info(f"Instantiating datamodule <{cfg.environment._target_}>")
+    environment: LightningDataModule = hydra.utils.instantiate(cfg.environment)
 
-    log.info(f"Instantiating model <{cfg.gfn._target_}>")
-    gfn: LightningModule = hydra.utils.instantiate(cfg.gfn)
+    log.info(f"Instantiating model <{cfg.algo._target_}>")
+    algo: LightningModule = hydra.utils.instantiate(cfg.algo)
 
     log.info("Instantiating callbacks...")
     callbacks: List[Callback] = instantiate_callbacks(cfg.get("callbacks"))
@@ -76,8 +76,8 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     object_dict = {
         "cfg": cfg,
-        "datamodule": datamodule,
-        "gfn": gfn,
+        "environment": environment,
+        "algo": algo,
         "callbacks": callbacks,
         "logger": logger,
         "trainer": trainer,
@@ -95,7 +95,7 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
             if ckpt_path_.exists():
                 ckpt_path = ckpt_path_
                 print("resuming from", ckpt_path)
-        trainer.fit(model=gfn, datamodule=datamodule, ckpt_path=ckpt_path)
+        trainer.fit(model=algo, datamodule=environment, ckpt_path=ckpt_path)
         log.info(f"Best model ckpt at {trainer.checkpoint_callback.best_model_path}")
 
     train_metrics = trainer.callback_metrics
@@ -106,7 +106,7 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         if ckpt_path == "":
             log.warning("Best ckpt not found! Using current weights for testing...")
             ckpt_path = None
-        trainer.test(model=gfn, datamodule=datamodule, ckpt_path=ckpt_path)
+        trainer.test(model=algo, datamodule=environment, ckpt_path=ckpt_path)
         log.info(f"Best ckpt path: {ckpt_path}")
 
     test_metrics = trainer.callback_metrics
@@ -151,6 +151,6 @@ if __name__ == "__main__":
         os.environ["SLURM_JOB_NAME"] = "chunkgfn_test_{}".format(timestamp)
 
     if "SCRATCH" not in os.environ:
-        os.environ["SCRATCH"] = os.path.expanduser('~')
+        os.environ["SCRATCH"] = os.path.expanduser("~")
 
     main()
