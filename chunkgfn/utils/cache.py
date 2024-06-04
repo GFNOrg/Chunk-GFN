@@ -10,7 +10,7 @@ class CachedPropertyWithInvalidation:
         self.func = func
         self.cache_name = f"_{func.__name__}_cache"
         self.attr_name = attr_name
-        self.attr_cache_name = f"_{attr_name}_cache"
+        self.attr_cache_name = f"_{attr_name}_{func.__name__}_cache"
 
     def __get__(self, instance, owner):
         if instance is None:
