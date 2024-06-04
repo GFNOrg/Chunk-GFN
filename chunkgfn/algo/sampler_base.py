@@ -56,7 +56,7 @@ class BaseSampler(ABC, LightningModule):
         self.train_trajectory_length = MeanMetric()
         self.val_correlation = SpearmanCorrCoef()
 
-    def on_train_start(self):
+    def setup(self, stage):
         self.env: BaseUnConditionalEnvironmentModule = self.trainer.datamodule
 
     def configure_optimizers(self):
@@ -94,15 +94,12 @@ class BaseSampler(ABC, LightningModule):
             }
         return {"optimizer": optimizer}
 
-    def update_library(self, n_tokens_to_add: int):
+    def update_library(self):
         """Update the library. This function will do the following, in the following order:
         1. Pick a number of generated samples from the replay buffer.
         2. Concatenate replay buffer samples with on-policy samples.
         3. Apply a tokenizing algorithm on the action sequences
         4. Add new token(s) to the actions list.
-
-        Args:
-            n_tokens_to_add (int): Number of tokens to add.
         """
 
         # Pick a number of generated samples from the replay buffer
@@ -133,7 +130,7 @@ class BaseSampler(ABC, LightningModule):
                 self.trainer.datamodule.chunk_bpe(
                     actions,
                     dones,
-                    n_tokens_to_add=n_tokens_to_add,
+                    n_tokens_to_add=self.hparams.n_chunks,
                 )
             elif self.hparams.chunk_type == "replacement":
                 n = self.hparams.total_library_size - len(
@@ -152,7 +149,7 @@ class BaseSampler(ABC, LightningModule):
                 self.trainer.datamodule.chunk_wordpiece(
                     actions,
                     dones,
-                    n_tokens_to_add=n_tokens_to_add,
+                    n_tokens_to_add=self.hparams.n_chunks,
                 )
             elif self.hparams.chunk_type == "replacement":
                 n = self.hparams.total_library_size - len(
@@ -168,7 +165,9 @@ class BaseSampler(ABC, LightningModule):
                 raise Exception("chunk_type not in ['basic', 'replacement']")
         elif self.hparams.chunk_algorithm == "uniform":
             if self.hparams.chunk_type == "basic":
-                self.trainer.datamodule.chunk_uniform(n_tokens_to_add=n_tokens_to_add)
+                self.trainer.datamodule.chunk_uniform(
+                    n_tokens_to_add=self.hparams.n_chunks
+                )
             elif self.hparams.chunk_type == "replacement":
                 n = self.hparams.total_library_size - len(
                     self.trainer.datamodule.atomic_tokens
@@ -436,7 +435,7 @@ class BaseSampler(ABC, LightningModule):
                 and self.current_epoch % self.hparams.library_update_frequency == 0
                 and batch_idx == 0
             ):
-                self.update_library(self.hparams.n_chunks)
+                self.update_library()
         return loss
 
     @abstractmethod
