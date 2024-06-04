@@ -94,6 +94,14 @@ class BaseSampler(ABC, LightningModule):
             }
         return {"optimizer": optimizer}
 
+    @torch.no_grad()
+    def refactor_replay_buffer(self):
+        """Refactor the replay buffer. By default, this method simply clears the replay
+        buffer. Subclasses can override this method to implement more complex logic.
+        """
+        if self.replay_buffer is not None:
+            self.replay_buffer.clear()
+
     def update_library(self):
         """Update the library. This function will do the following, in the following order:
         1. Pick a number of generated samples from the replay buffer.
@@ -103,26 +111,30 @@ class BaseSampler(ABC, LightningModule):
         """
 
         # Pick a number of generated samples from the replay buffer
-        nsamples_replay = int(
-            self.hparams.n_samples * self.hparams.ratio_from_replay_buffer
-        )
+        if self.replay_buffer is not None:
+            nsamples_replay = int(
+                self.hparams.n_samples * self.hparams.ratio_from_replay_buffer
+            )
+            trajectories, actions, dones, _, _ = self.forward(
+                self.hparams.n_samples - nsamples_replay
+            )
 
-        samples = self.replay_buffer.sample(nsamples_replay)
-        trajectories_rb = samples["trajectories"]
-        actions_rb = samples["actions"]
-        dones_rb = samples["dones"]
-        trajectories, actions, dones, _, _ = self.forward(
-            self.hparams.n_samples - nsamples_replay
-        )
-        # Concatenate samples from the replay buffer and the on-policy samples
-        _, actions, dones = extend_trajectories(
-            trajectories.to(trajectories_rb),
-            trajectories_rb,
-            actions.to(actions_rb),
-            actions_rb,
-            dones.to(dones_rb),
-            dones_rb,
-        )
+            samples = self.replay_buffer.sample(nsamples_replay)
+            trajectories_rb = samples["trajectories"]
+            actions_rb = samples["actions"]
+            dones_rb = samples["dones"]
+
+            # Concatenate samples from the replay buffer and the on-policy samples
+            _, actions, dones = extend_trajectories(
+                trajectories.to(trajectories_rb),
+                trajectories_rb,
+                actions.to(actions_rb),
+                actions_rb,
+                dones.to(dones_rb),
+                dones_rb,
+            )
+        else:
+            trajectories, actions, dones, _, _ = self.forward(self.hparams.n_samples)
 
         # Get the most valuable tokens.
         if self.hparams.chunk_algorithm == "bpe":
@@ -137,8 +149,8 @@ class BaseSampler(ABC, LightningModule):
                     self.trainer.datamodule.atomic_tokens
                 )
                 self.trainer.datamodule.chunk_bpe(
-                    samples["actions"],
-                    samples["dones"],
+                    actions,
+                    dones,
                     n_tokens_to_add=n,
                     remove_old=True,
                 )
@@ -156,8 +168,8 @@ class BaseSampler(ABC, LightningModule):
                     self.trainer.datamodule.atomic_tokens
                 )
                 self.trainer.datamodule.chunk_wordpiece(
-                    samples["actions"],
-                    samples["dones"],
+                    actions,
+                    dones,
                     n_tokens_to_add=n,
                     remove_old=True,
                 )
@@ -332,15 +344,27 @@ class BaseSampler(ABC, LightningModule):
         )
 
     def training_step(self, train_batch, batch_idx) -> Any:
+        if self.epsilon_scheduler is not None:
+            epsilon = self.epsilon_scheduler.step(self.current_epoch)
+        else:
+            epsilon = None
+        if self.temperature_scheduler is not None:
+            temperature = self.temperature_scheduler.step(self.current_epoch)
+        else:
+            temperature = None
+
         x, trajectories, actions, dones, final_state, logreward, trajectory_length = (
             self.sample(
                 train_batch,
+                train=True,
+                epsilon=epsilon,
+                temperature=temperature,
             )
         )
         batch_size = x.shape[0]
-        nsamples_replay = int(batch_size * self.hparams.ratio_from_replay_buffer)
 
         if self.replay_buffer is not None:
+            nsamples_replay = int(batch_size * self.hparams.ratio_from_replay_buffer)
             with torch.no_grad():
                 self.replay_buffer.add(
                     input=x,
@@ -436,6 +460,11 @@ class BaseSampler(ABC, LightningModule):
                 and batch_idx == 0
             ):
                 self.update_library()
+                if (
+                    self.hparams.chunk_type == "replacement"
+                    and self.replay_buffer is not None
+                ):
+                    self.refactor_replay_buffer()
         return loss
 
     @abstractmethod

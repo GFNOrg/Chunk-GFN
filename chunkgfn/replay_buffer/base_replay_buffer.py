@@ -19,6 +19,17 @@ class ReplayBuffer(ABC):
     def __len__(self):
         return len(self.storage["input"])
 
+    def clear(self):
+        """Clear the replay buffer."""
+        self.storage = {
+            "input": torch.Tensor(),
+            "trajectories": torch.Tensor(),
+            "actions": torch.Tensor(),
+            "dones": torch.Tensor(),
+            "final_state": torch.Tensor(),
+            "logreward": torch.Tensor(),
+        }
+
     @abstractmethod
     def sample(self, num_samples: int):
         NotImplementedError

@@ -106,6 +106,19 @@ class TBGFN(BaseSampler):
         )  # Same as in softmax
         return logits
 
+    @torch.no_grad()
+    def refactor_replay_buffer(self):
+        """Refactor the replay buffer. This function takes final states from the replay
+        buffer and samples backward trajectories for them to get different trajctories
+        based on the current library.
+        """
+        if self.replay_buffer is not None:
+            final_state = self.replay_buffer.storage["final_state"]
+            trajectories, actions, dones, _ = self.go_backward(final_state)
+            self.replay_buffer.storage["trajectories"] = trajectories
+            self.replay_buffer.storage["actions"] = actions
+            self.replay_buffer.storage["dones"] = dones
+
     def go_backward(self, final_state: torch.Tensor):
         """Sample backward trajectories conditioned on inputs.
         Args:
