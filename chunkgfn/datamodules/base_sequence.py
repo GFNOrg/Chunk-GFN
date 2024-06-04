@@ -76,6 +76,10 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
         )  # Tracks the frequency of each action. Can change during training.
 
     @cached_property_with_invalidation("actions")
+    def n_actions(self):
+        return len(self.actions)
+
+    @cached_property_with_invalidation("actions")
     def one_hot_action_tensor(self):
         """One-hot encoding tensor for self.actions. Actions that are composed of more
         than an atomic token, will have a one-hot encoding that spans multiple timesteps.
@@ -96,7 +100,7 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
         return one_hot_action_tensor
 
     @cached_property_with_invalidation("actions")
-    def action_indices(self) -> dict[str, int]:
+    def action_indices(self) -> dict[str, list[int]]:
         """Get the action indices. For each action, if it's a primitive one then keep
         its a list of one element which is its original index, otherwise, keep a list of
         indices of the primitive actions that make up the action.
