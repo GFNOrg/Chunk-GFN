@@ -6,7 +6,6 @@ from torch.optim import Adam
 
 from chunkgfn.algo.sampler_base import BaseSampler
 from chunkgfn.replay_buffer.base_replay_buffer import ReplayBuffer
-from chunkgfn.replay_buffer.utils import extend_trajectories
 
 
 class RandomSampler(BaseSampler):
