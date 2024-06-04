@@ -18,9 +18,13 @@ def distance(src: torch.Tensor, dst: torch.Tensor):
 
 class PrioritizedReplay(ReplayBuffer):
     def __init__(
-        self, cutoff_distance: float, capacity: int = 1000, is_conditional: bool = True
+        self,
+        cutoff_distance: float,
+        capacity: int = 1000,
+        is_conditional: bool = True,
+        **kwargs,
     ):
-        super().__init__(capacity, is_conditional)
+        super().__init__(capacity, is_conditional, **kwargs)
         self.cutoff_distance = cutoff_distance
 
     def add(
@@ -215,8 +219,10 @@ class PrioritizedReplay(ReplayBuffer):
             dict: Dictionary containing the samples.
         """
         probs = torch.softmax(self.storage["logreward"], dim=-1)
-        if probs.shape[-1]< num_samples:
-            raise ValueError(f"Number of samples to draw is larger than the buffer size. Decrease gfn.num_samples to less than {probs.shape[-1]}")
+        if probs.shape[-1] < num_samples:
+            raise ValueError(
+                f"Number of samples to draw is larger than the buffer size. Decrease gfn.num_samples to less than {probs.shape[-1]}"
+            )
         ixs = torch.multinomial(probs, num_samples, replacement=False)
         samples = {}
 
