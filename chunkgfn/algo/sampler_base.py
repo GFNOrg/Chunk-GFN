@@ -94,6 +94,93 @@ class BaseSampler(ABC, LightningModule):
             }
         return {"optimizer": optimizer}
 
+    def update_library(self, n_tokens_to_add: int):
+        """Update the library. This function will do the following, in the following order:
+        1. Pick a number of generated samples from the replay buffer.
+        2. Concatenate replay buffer samples with on-policy samples.
+        3. Apply a tokenizing algorithm on the action sequences
+        4. Add new token(s) to the actions list.
+
+        Args:
+            n_tokens_to_add (int): Number of tokens to add.
+        """
+
+        # Pick a number of generated samples from the replay buffer
+        nsamples_replay = int(
+            self.hparams.n_samples * self.hparams.ratio_from_replay_buffer
+        )
+
+        samples = self.replay_buffer.sample(nsamples_replay)
+        trajectories_rb = samples["trajectories"]
+        actions_rb = samples["actions"]
+        dones_rb = samples["dones"]
+        trajectories, actions, dones, _, _ = self.forward(
+            self.hparams.n_samples - nsamples_replay
+        )
+        # Concatenate samples from the replay buffer and the on-policy samples
+        _, actions, dones = extend_trajectories(
+            trajectories.to(trajectories_rb),
+            trajectories_rb,
+            actions.to(actions_rb),
+            actions_rb,
+            dones.to(dones_rb),
+            dones_rb,
+        )
+
+        # Get the most valuable tokens.
+        if self.hparams.chunk_algorithm == "bpe":
+            if self.hparams.chunk_type == "basic":
+                self.trainer.datamodule.chunk_bpe(
+                    actions,
+                    dones,
+                    n_tokens_to_add=n_tokens_to_add,
+                )
+            elif self.hparams.chunk_type == "replacement":
+                n = self.hparams.total_library_size - len(
+                    self.trainer.datamodule.atomic_tokens
+                )
+                self.trainer.datamodule.chunk_bpe(
+                    samples["actions"],
+                    samples["dones"],
+                    n_tokens_to_add=n,
+                    remove_old=True,
+                )
+            else:
+                raise Exception("chunk_type not in ['basic', 'replacement']")
+        elif self.hparams.chunk_algorithm == "wordpiece":
+            if self.hparams.chunk_type == "basic":
+                self.trainer.datamodule.chunk_wordpiece(
+                    actions,
+                    dones,
+                    n_tokens_to_add=n_tokens_to_add,
+                )
+            elif self.hparams.chunk_type == "replacement":
+                n = self.hparams.total_library_size - len(
+                    self.trainer.datamodule.atomic_tokens
+                )
+                self.trainer.datamodule.chunk_wordpiece(
+                    samples["actions"],
+                    samples["dones"],
+                    n_tokens_to_add=n,
+                    remove_old=True,
+                )
+            else:
+                raise Exception("chunk_type not in ['basic', 'replacement']")
+        elif self.hparams.chunk_algorithm == "uniform":
+            if self.hparams.chunk_type == "basic":
+                self.trainer.datamodule.chunk_uniform(n_tokens_to_add=n_tokens_to_add)
+            elif self.hparams.chunk_type == "replacement":
+                n = self.hparams.total_library_size - len(
+                    self.trainer.datamodule.atomic_tokens
+                )
+                self.trainer.datamodule.chunk_uniform(
+                    n_tokens_to_add=n, remove_old=True
+                )
+            else:
+                raise Exception("chunk_type not in ['basic', 'replacement']")
+        else:
+            raise Exception("chunk_algorithm not in ['bpe', 'wordpiece', 'uniform']")
+
     def get_library_embeddings(self):
         """Produce embedding for all actions in the library.
         Returns:
@@ -343,6 +430,13 @@ class BaseSampler(ABC, LightningModule):
                 prog_bar=True,
             )
 
+        if self.hparams.chunk_algorithm is not None:
+            if (
+                self.current_epoch > 0
+                and self.current_epoch % self.hparams.library_update_frequency == 0
+                and batch_idx == 0
+            ):
+                self.update_library(self.hparams.n_chunks)
         return loss
 
     @abstractmethod
