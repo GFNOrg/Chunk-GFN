@@ -299,7 +299,8 @@ class BaseUnConditionalEnvironmentModule(LightningDataModule, ABC):
 
     def add_to_vocab(self, tokens: list[str]):
         assert all([x not in self.actions for x in tokens])
-        self.actions.extend(tokens)
+        _actions = copy(self.actions)
+        self.actions = _actions + tokens
         self.action_len = torch.cat(
             [self.action_len, torch.tensor([len(x) for x in tokens])], dim=0
         )
@@ -312,7 +313,8 @@ class BaseUnConditionalEnvironmentModule(LightningDataModule, ABC):
         assert all([x in self.actions for x in tokens])
         for token in tokens:
             idx = self.actions.index(token)
-            self.actions.pop(idx)
+            _actions = copy(self.actions)
+            self.actions = _actions[:idx] + _actions[idx + 1 :]
             self.action_len = torch.cat(
                 [self.action_len[:idx], self.action_len[idx + 1 :]], dim=0
             )
