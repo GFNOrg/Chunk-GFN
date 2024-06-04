@@ -159,7 +159,7 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
         str_trajectories = []
         for i in range(trajs.shape[0]):
             traj, done = trajs[i], dones[i]
-            ixs = torch.where(done == False)[0]
+            ixs = torch.where(done is False)[0]
             traj = traj[ixs[0] : ixs[-1] + 1]
             str_trajectories.append(self.to_strings(traj))
         return str_trajectories
@@ -314,7 +314,6 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
             (unfolded.unsqueeze(-2) == simplified_one_hot_action_tensor)
             .all(dim=-1)
             .any(dim=1)
-            .long()
         )
         return actions_mask
 
