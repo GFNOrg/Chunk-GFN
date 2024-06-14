@@ -5,7 +5,7 @@ import torch
 from einops import repeat
 from lightning import LightningModule
 from torch.distributions import Categorical
-from torchmetrics import MeanMetric, SpearmanCorrCoef
+from torchmetrics import MeanMetric
 
 from chunkgfn.algo.utils import has_trainable_parameters
 from chunkgfn.datamodules.base_module import BaseUnConditionalEnvironmentModule
@@ -17,7 +17,7 @@ from ..constants import EPS, NEGATIVE_INFINITY
 
 
 class BaseSampler(ABC, LightningModule):
-    """Abstract class for samplers. The require a forward policy
+    """Abstract class for samplers. Its requires a forward policy
     as well as action_embedder. The role of this class is to implement basic
     methods and attributes for building the simplest sampler there is and an example
     is that of a random sampler. Classes that inherit from this one can add more modules
@@ -52,9 +52,7 @@ class BaseSampler(ABC, LightningModule):
         self.val_loss = MeanMetric()
         self.train_logreward = MeanMetric()
         self.val_logreward = MeanMetric()
-        self.train_logZ = MeanMetric()
         self.train_trajectory_length = MeanMetric()
-        self.val_correlation = SpearmanCorrCoef()
 
     def setup(self, stage):
         self.env: BaseUnConditionalEnvironmentModule = self.trainer.datamodule
@@ -134,7 +132,7 @@ class BaseSampler(ABC, LightningModule):
                 dones_rb,
             )
         else:
-            trajectories, actions, dones, _, _ = self.forward(self.hparams.n_samples)
+            _, actions, dones, _, _ = self.forward(self.hparams.n_samples)
 
         # Get the most valuable tokens.
         if self.hparams.chunk_algorithm == "bpe":
@@ -251,26 +249,26 @@ class BaseSampler(ABC, LightningModule):
         actions = []
         trajectories = []
         dones = []
-        done = torch.zeros((bs)).to(state).bool()
-        trajectory_length = (
-            torch.zeros((bs)).to(state).long()
+        done = torch.zeros((bs), dtype=torch.bool, device=self.device)
+        trajectory_length = torch.zeros(
+            (bs), dtype=torch.long, device=self.device
         )  # This tracks the length of trajectory for each sample in the batch
 
         while not done.all():
             logit_pf = self.get_forward_logits(state)
-            uniform_dist_probs = torch.ones_like(logit_pf).to(logit_pf)
+            uniform_dist_probs = torch.ones_like(logit_pf, device=self.device)
 
             forward_mask = self.env.get_forward_mask(state)
 
             logit_pf = torch.where(
                 forward_mask,
                 logit_pf,
-                torch.tensor(NEGATIVE_INFINITY).to(logit_pf),
+                torch.tensor(NEGATIVE_INFINITY, device=self.device),
             )
             uniform_dist_probs = torch.where(
                 forward_mask,
                 uniform_dist_probs,
-                torch.tensor(0.0).to(uniform_dist_probs),
+                torch.tensor(0.0, device=self.device),
             )
 
             if train:
@@ -302,7 +300,7 @@ class BaseSampler(ABC, LightningModule):
             state = new_state.clone()
 
         trajectories.append(state)
-        dones.append(torch.ones((bs)).to(state).bool())
+        dones.append(torch.ones((bs), dtype=torch.bool, device=self.device))
         trajectories = torch.stack(trajectories, dim=1)
         actions = torch.stack(actions, dim=1)
         dones = torch.stack(dones, dim=1)
