@@ -16,13 +16,13 @@ seed: 42
 
 
 trainer:
-  max_epochs: 1500
-  check_val_every_n_epoch: 20
+  max_epochs: 250
+  check_val_every_n_epoch: 10
 
 algo:
   forward_policy:
     _target_: chunkgfn.models.rnn.UnconditionalRNN
-    num_layers: 1
+    num_layers: 2
     hidden_dim: 128
     state_dim: 3
     action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
@@ -30,16 +30,12 @@ algo:
       _target_: torch.nn.ReLU
 
   backward_policy:
-    _target_: chunkgfn.models.rnn.UnconditionalRNN
-    num_layers: 1
-    hidden_dim: 128
-    state_dim: 3
+    _target_: chunkgfn.models.uniform_policy.UniformPolicy
     action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
-    act:
-      _target_: torch.nn.ReLU
   
   action_embedder:
     _target_: chunkgfn.models.action_encoder.ActionModel
+    hidden_dim: 128
     n_primitive_actions: 3
   
   replay_buffer:

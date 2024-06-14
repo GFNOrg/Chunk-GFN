@@ -3,8 +3,8 @@ _target_: chunkgfn.datamodules.bit_sequence.BitSequenceModule
 max_len: 32
 num_train_iterations: 100
 sample_exact_length: True # Whether to always sample sequences of length `max_len` or not
-threshold: 0.9
-batch_size: 64
+threshold: 0.8
+batch_size: 32
 num_workers: 0
 pin_memory: True
 persistent_workers: False

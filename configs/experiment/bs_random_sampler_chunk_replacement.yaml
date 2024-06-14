@@ -14,6 +14,7 @@ defaults:
 seed: 42
 
 
+
 trainer:
   max_epochs: 250
   check_val_every_n_epoch: 10
@@ -24,8 +25,12 @@ algo:
     capacity: 10000
     is_conditional: False
     cutoff_distance: 25
-
-  chunk_algorithm: null
+  
+  chunk_algorithm: bpe
+  chunk_type: replacement
+  total_library_size: 28
+  library_update_frequency: 10
+  n_samples: 10000
 
 logger:
   wandb:

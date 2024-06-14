@@ -19,8 +19,8 @@ action_embedder:
 
 epsilon_scheduler:
   _target_: chunkgfn.schedulers.linear_schedule.LinearSchedule
-  initial_value: 0.5
-  final_value: 0.1
+  initial_value: 0.05
+  final_value: 0.01
   max_epochs: ${trainer.max_epochs}
 
 replay_buffer: null
@@ -29,14 +29,15 @@ forward_policy_lr: 1e-4
 backward_policy_lr: 1e-4
 partition_lr: 1e-3
 action_embedder_lr: 1e-4
+
+num_partition_nodes: 64
+partition_init: 32
+
 monitor: val/logreward
+
 ratio_from_replay_buffer: 0.55 # Ratio of samples from replay buffer
 n_trajectories: 1 # Number of test trajectories to sample
 reward_temperature: 0.33333 # Temperature for the reward
 n_onpolicy_samples: 512 # Number of on-policy samples to draw for each validation step
 
-chunk_algorithm: bpe
-chunk_type: replacement
-library_update_frequency: 2
-total_library_size: 20
-n_samples: 5000
+chunk_algorithm: null

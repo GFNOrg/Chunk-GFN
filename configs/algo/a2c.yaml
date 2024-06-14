@@ -22,13 +22,8 @@ critic_lr: 1e-4
 action_embedder_lr: 1e-4
 monitor: train/logreward
 
-n_trajectories: 1 # Number of test trajectories to sample
 reward_temperature: 0.33333 # Temperature for the reward
 n_onpolicy_samples: 512 # Number of on-policy samples to draw for each validation step
 entropy_coeff: 0.01 # Entropy coefficient for the policy
 
-chunk_algorithm: bpe
-chunk_type: replacement
-library_update_frequency: 2
-total_library_size: 20
-n_samples: 5000
+chunk_algorithm: null
