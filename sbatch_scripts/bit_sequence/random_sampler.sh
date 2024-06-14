@@ -4,9 +4,9 @@ maxlen_cutoff=(
 )
 
 experiments=(
-    "bit_sequence_prioritized"
-    "bit_sequence_prioritized_chunk"
-    "bit_sequence_prioritized_chunk_replacement"
+    "bs_random_sampler"
+    "bs_random_sampler_chunk"
+    "bs_random_sampler_chunk_replacement"
 )
 
 for seed in 1998 2024 42
@@ -27,12 +27,11 @@ do
             sbatch sbatch_scripts/bit_sequence/bit_sequence.sh \
             experiment=${exp} \
             task_name=bit_sequence \
-            seed=${seed} \
             environment.max_len=${length} \
-            environment.batch_size=${batch_size} \
             algo.replay_buffer.cutoff_distance=${cutoff} \
-            logger.wandb.name=${exp}_${length}_bpe \
+            logger.wandb.name=${exp}_${length} \
             logger.wandb.group=bit_sequence
+
         done
     done
 done

@@ -2,8 +2,8 @@
 #SBATCH --partition=long
 #SBATCH --cpus-per-task=3
 #SBATCH --gres=gpu:rtx8000:1
-#SBATCH --mem=24G
-#SBATCH --time=4-06:00:00
+#SBATCH --mem=36G
+#SBATCH --time=1-06:00:00
 #SBATCH -o /network/scratch/o/oussama.boussif/slurm-%j.out
 
 module --quiet load python/3.10
