@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from einops import rearrange, repeat
 from torch import nn
 from torch.distributions import Categorical
+from torchmetrics import SpearmanCorrCoef
 
 from chunkgfn.algo.sampler_base import BaseSampler
 from chunkgfn.algo.utils import has_trainable_parameters
@@ -38,7 +39,17 @@ class TBGFN(BaseSampler):
             **kwargs,
         )
         self.backward_policy = backward_policy
-        self.logZ = nn.Parameter(torch.zeros(1))
+        self._logZ = nn.Parameter(
+            torch.ones(self.hparams.num_partition_nodes)
+            * self.hparams.partition_init
+            / self.hparams.num_partition_nodes
+        )
+
+        self.val_correlation = SpearmanCorrCoef()
+
+    @property
+    def logZ(self):
+        return self._logZ.sum()
 
     def configure_optimizers(self):
         params = []
@@ -72,7 +83,7 @@ class TBGFN(BaseSampler):
             )
         params.append(
             {
-                "params": self.logZ,
+                "params": self._logZ,
                 "lr": self.hparams.partition_lr,
             }
         )
@@ -114,10 +125,12 @@ class TBGFN(BaseSampler):
         """
         if self.replay_buffer is not None:
             final_state = self.replay_buffer.storage["final_state"]
-            trajectories, actions, dones, _ = self.go_backward(final_state)
-            self.replay_buffer.storage["trajectories"] = trajectories
-            self.replay_buffer.storage["actions"] = actions
-            self.replay_buffer.storage["dones"] = dones
+            trajectories, actions, dones, _ = self.go_backward(
+                final_state.to(self.device)
+            )
+            self.replay_buffer.storage["trajectories"] = trajectories.cpu()
+            self.replay_buffer.storage["actions"] = actions.cpu()
+            self.replay_buffer.storage["dones"] = dones.cpu()
 
     def go_backward(self, final_state: torch.Tensor):
         """Sample backward trajectories conditioned on inputs.
@@ -130,21 +143,22 @@ class TBGFN(BaseSampler):
             state (torch.Tensor[batch_size, *state_shape]): Final state.
         """
         bs = final_state.shape[0]
+        device = final_state.device
         state = final_state.clone()
-        done = torch.zeros((bs)).to(final_state).bool()
+        done = torch.zeros((bs), device=device, dtype=bool)
 
         # Start unrolling the trajectories
         actions = []
         trajectories = []
         dones = []
-        dones.append(torch.ones((bs)).to(final_state).bool())
+        dones.append(torch.ones((bs), device=device, dtype=bool))
         while not done.all():
             logit_pb = self.get_backward_logits(state)
             backward_mask = self.env.get_backward_mask(state)
             logit_pb = torch.where(
                 backward_mask,
                 logit_pb,
-                torch.tensor(NEGATIVE_INFINITY).to(logit_pb),
+                torch.tensor(NEGATIVE_INFINITY, device=device),
             )
 
             # When no action is available, just fill with uniform because
@@ -192,6 +206,7 @@ class TBGFN(BaseSampler):
         """
         unique_final_state = final_state
         bs = unique_final_state.shape[0]
+        device = final_state.device
         # Repeat the final_state n_trajectories times
         final_state = repeat(
             final_state, "b ... -> b n ...", n=self.hparams.n_trajectories
@@ -212,7 +227,7 @@ class TBGFN(BaseSampler):
             logit_pf = torch.where(
                 forward_mask,
                 logit_pf,
-                torch.tensor(NEGATIVE_INFINITY).to(logit_pf),
+                torch.tensor(NEGATIVE_INFINITY, device=device),
             )
 
             if t < trajectories.shape[1] - 1:
@@ -227,7 +242,7 @@ class TBGFN(BaseSampler):
                 logit_pb = torch.where(
                     backward_mask,
                     logit_pb,
-                    torch.tensor(NEGATIVE_INFINITY).to(logit_pb),
+                    torch.tensor(NEGATIVE_INFINITY, device=device),
                 )
 
                 # When no action is available, just fill with uniform because
@@ -266,6 +281,7 @@ class TBGFN(BaseSampler):
         """
 
         bs = trajectories.shape[0]
+        device = trajectories.device
         trajectories_forward = rearrange(trajectories[:, :-1], "b t ... -> (b t) ...")
         dones_forward = rearrange(dones[:, :-1], "b t ... -> (b t) ...")
         actions_ = rearrange(actions, "b t ... -> (b t) ...")
@@ -273,7 +289,7 @@ class TBGFN(BaseSampler):
         logit_pf = self.get_forward_logits(trajectories_forward)
         forward_mask = self.env.get_forward_mask(trajectories_forward)
         logit_pf = torch.where(
-            forward_mask, logit_pf, torch.tensor(NEGATIVE_INFINITY).to(logit_pf)
+            forward_mask, logit_pf, torch.tensor(NEGATIVE_INFINITY, device=device)
         )
 
         log_pf_ = Categorical(logits=logit_pf).log_prob(actions_) * (~dones_forward + 0)
@@ -353,7 +369,7 @@ class TBGFN(BaseSampler):
 
     def on_validation_epoch_end(self):
         # Get on-policy samples from the GFN
-        dummy_batch = torch.arange(self.hparams.n_onpolicy_samples).to(self.device)
+        dummy_batch = torch.arange(self.hparams.n_onpolicy_samples, device=self.device)
         _, _, actions, dones, final_state, _, trajectory_length = self.sample(
             dummy_batch,
             train=False,
