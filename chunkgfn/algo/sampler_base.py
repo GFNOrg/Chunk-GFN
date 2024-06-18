@@ -36,7 +36,6 @@ class BaseSampler(ABC, LightningModule):
         **kwargs,
     ):
         super().__init__()
-        self.save_hyperparameters(logger=False)
 
         # Forward policy model
         self.forward_policy = forward_policy

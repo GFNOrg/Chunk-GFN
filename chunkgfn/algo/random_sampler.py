@@ -16,6 +16,7 @@ class RandomSampler(BaseSampler):
         replay_buffer: ReplayBuffer | None = None,
         **kwargs,
     ):
+        self.save_hyperparameters(logger=False)
         forward_policy = None
         action_embedder = None
         super().__init__(

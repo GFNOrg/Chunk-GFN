@@ -23,6 +23,7 @@ class A2C(BaseSampler):
         scheduler: torch.optim.lr_scheduler,
         **kwargs,
     ):
+        self.save_hyperparameters(logger=False)
         super().__init__(
             forward_policy,
             action_embedder,

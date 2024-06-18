@@ -28,6 +28,7 @@ class TBGFN(BaseSampler):
         replay_buffer: ReplayBuffer | None = None,
         **kwargs,
     ):
+        self.save_hyperparameters(logger=False)
         super().__init__(
             forward_policy,
             action_embedder,
