@@ -57,4 +57,54 @@ class RandomSampler(BaseSampler):
         return logits
 
     def validation_step(self, val_batch, batch_idx) -> Any:
-        pass
+        final_state, _ = val_batch
+        x, trajectories, actions, dones, final_state, logreward, trajectory_length = (
+            self.sample(
+                final_state,
+            )
+        )
+        loss = self.compute_loss(trajectories, actions, dones, logreward)
+
+        self.val_loss(loss)
+        self.val_logreward(logreward.mean())
+
+        self.log("val/loss", self.val_loss, on_step=True, prog_bar=True)
+        self.log(
+            "val/logreward",
+            self.val_logreward,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+        )
+
+    def on_validation_epoch_end(self):
+        # Get on-policy samples from the sampler
+        dummy_batch = torch.arange(self.hparams.n_onpolicy_samples).to(self.device)
+        _, _, actions, dones, final_state, _, trajectory_length = self.sample(
+            dummy_batch,
+            train=False,
+            epsilon=None,
+            temperature=None,
+        )
+        torch.save(
+            {
+                "actions": actions,
+                "dones": dones,
+                "final_state": final_state,
+                "trajectory_length": trajectory_length,
+                "epoch": self.current_epoch,
+            },
+            f"{self.trainer.log_dir}/on_policy_samples_{self.current_epoch}.pt",
+        )
+
+        # Save the library and frequency of use at each epoch
+        action_frequency = [
+            [freq, action]
+            for (freq, action) in zip(
+                self.env.action_frequency,
+                self.env.actions,
+            )
+        ]
+        torch.save(
+            action_frequency, f"{self.trainer.log_dir}/library_{self.current_epoch}.pt"
+        )
