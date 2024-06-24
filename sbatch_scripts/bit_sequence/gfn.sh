@@ -31,6 +31,7 @@ do
             environment.max_len=${length} \
             environment.batch_size=${batch_size} \
             algo.replay_buffer.cutoff_distance=${cutoff} \
+            algo.replay_refactor=backward \
             logger.wandb.name=${exp}_${length}_bpe \
             logger.wandb.group=bit_sequence
         done
