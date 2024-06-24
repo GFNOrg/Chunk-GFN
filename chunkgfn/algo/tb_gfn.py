@@ -125,13 +125,16 @@ class TBGFN(BaseSampler):
         based on the current library.
         """
         if self.replay_buffer is not None:
-            final_state = self.replay_buffer.storage["final_state"]
-            trajectories, actions, dones, _ = self.go_backward(
-                final_state.to(self.device)
-            )
-            self.replay_buffer.storage["trajectories"] = trajectories.cpu()
-            self.replay_buffer.storage["actions"] = actions.cpu()
-            self.replay_buffer.storage["dones"] = dones.cpu()
+            if self.hparams.replay_refactor == "backward":
+                final_state = self.replay_buffer.storage["final_state"]
+                trajectories, actions, dones, _ = self.go_backward(
+                    final_state.to(self.device)
+                )
+                self.replay_buffer.storage["trajectories"] = trajectories.cpu()
+                self.replay_buffer.storage["actions"] = actions.cpu()
+                self.replay_buffer.storage["dones"] = dones.cpu()
+            elif self.hparams.replay_refactor == "clear":
+                self.replay_buffer.clear()
 
     def go_backward(self, final_state: torch.Tensor):
         """Sample backward trajectories conditioned on inputs.
