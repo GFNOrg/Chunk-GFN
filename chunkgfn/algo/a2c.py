@@ -95,7 +95,7 @@ class A2C(BaseSampler):
         states = rearrange(trajectories, "b t ... -> (b t) ...")
         # Since reward only given at the end, return=reward
         returns = logreward.repeat_interleave(trajectories.shape[1]).exp()
-        values = self.critic(self.env.preprocess_states(states)).squeeze()
+        values = self.critic(*self.env.preprocess_states(states)).squeeze()
 
         advantage = returns - values
 

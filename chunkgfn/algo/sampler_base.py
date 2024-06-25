@@ -212,7 +212,7 @@ class BaseSampler(ABC, LightningModule):
         Return:
             logits (torch.Tensor[batch_size, n_actions]): Forward logits.
         """
-        action_embedding = self.forward_policy(self.env.preprocess_states(state))
+        action_embedding = self.forward_policy(*self.env.preprocess_states(state))
         dim = action_embedding.shape[-1]
         library_embeddings = self.get_library_embeddings()
         logits = torch.einsum("bd, nd -> bn", action_embedding, library_embeddings) / (

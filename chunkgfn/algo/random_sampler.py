@@ -58,17 +58,12 @@ class RandomSampler(BaseSampler):
 
     def validation_step(self, val_batch, batch_idx) -> Any:
         final_state, _ = val_batch
-        x, trajectories, actions, dones, final_state, logreward, trajectory_length = (
-            self.sample(
-                final_state,
-            )
+        _, _, _, _, final_state, logreward, _ = self.sample(
+            final_state,
         )
-        loss = self.compute_loss(trajectories, actions, dones, logreward)
 
-        self.val_loss(loss)
         self.val_logreward(logreward.mean())
 
-        self.log("val/loss", self.val_loss, on_step=True, prog_bar=True)
         self.log(
             "val/logreward",
             self.val_logreward,
