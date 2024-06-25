@@ -14,6 +14,8 @@ defaults:
 seed: 42
 
 
+environment:
+  output_padding_mask: True
 
 trainer:
   max_epochs: 250
@@ -21,29 +23,33 @@ trainer:
 
 algo:
   forward_policy:
-    _target_: chunkgfn.models.rnn.UnconditionalRNN
-    num_layers: 2
+    _target_: chunkgfn.models.transformer.Transformer
+    num_layers: 4
     hidden_dim: 128
     state_dim: 3
+    max_len: ${environment.max_len}
+    num_head: 8
     action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
-    act:
-      _target_: torch.nn.ReLU
 
   backward_policy:
     _target_: chunkgfn.models.uniform_policy.UniformPolicy
     action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
   
   action_embedder:
-    _target_: chunkgfn.models.action_encoder.ActionModel
-    hidden_dim: 128
+    _target_: chunkgfn.models.action_encoder.ActionEncoder
     n_primitive_actions: 3
+    num_layers: 4
+    hidden_dim: 128
+    max_len: ${environment.max_len}
+    num_head: 8
   
   replay_buffer:
     _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
     capacity: 10000
     cutoff_distance: 5
     is_conditional: False
-  reward_temperature: 0.3333
+  
+  reward_temperature: 0.2
 
 logger:
   wandb:

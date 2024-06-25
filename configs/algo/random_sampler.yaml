@@ -16,3 +16,4 @@ total_library_size: 20
 n_chunks: 1
 n_samples: 5000
 library_update_frequency: 2
+n_onpolicy_samples: 512
