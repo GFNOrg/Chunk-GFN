@@ -1,5 +1,5 @@
 from abc import ABC
-from typing import List
+from typing import List, Tuple, Union
 
 import numpy as np
 import torch
@@ -40,6 +40,7 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
         num_train_iterations: int,
         batch_size: int = 64,
         sample_exact_length: bool = False,
+        output_padding_mask: bool = False,
         num_workers: int = 0,
         pin_memory: bool = False,
         **kwargs,
@@ -53,6 +54,7 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
         )
         self.max_len = max_len
         self.sample_exact_length = sample_exact_length
+        self.output_padding_mask = output_padding_mask
 
         # Environment variables
         self.discovered_modes = set()  # Tracks the number of modes we discovered
@@ -60,11 +62,13 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
         self.atomic_tokens = (
             [self.exit_action] + atomic_tokens
         )  # Atomic tokens for representing the states. Stays fixed during training.
-        self.s0 = -torch.ones(
-            1 + self.max_len, len(self.atomic_tokens)
-        )  # Initial state
         self.padding_token = -torch.ones(len(self.atomic_tokens))
         self.eos_token = torch.tensor([1] + [0] * (len(self.atomic_tokens) - 1))
+        self.bos_token = -2 * torch.ones(len(self.atomic_tokens))
+        # Initial state
+        self.s0 = torch.stack(
+            [self.bos_token] + [self.padding_token] * (1 + self.max_len)
+        )
         # Actions can change during training. Not to be confused with atomic_tokens.
         self.actions = self.atomic_tokens.copy()
 
@@ -116,13 +120,19 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
 
         return action_indices
 
-    def preprocess_states(self, states: torch.Tensor) -> torch.Tensor:
-        """Preprocess states so that it can be input to the policy model.
+    def preprocess_states(
+        self, states: torch.Tensor
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor]]:
+        """Either output states or states with a padding mask (useful for Transformer).
         Args:
             states (torch.Tensor[batch_size, max_len, dim]): The states.
         Returns:
             processed_states (torch.Tensor[batch_size, max_len, dim]): The preprocessed states.
         """
+        padding_token = self.padding_token.to(states)
+        if self.output_padding_mask:
+            mask = (states == padding_token).all(dim=-1)
+            return states, mask
         return states
 
     def is_initial_state(self, states: torch.Tensor) -> torch.Tensor:
@@ -143,7 +153,8 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
             raw (list[str]): List of states in their string representation.
         """
         strings = []
-        for state in states.cpu():
+        states_ = states[:, 1:]  # Remove BOS
+        for state in states_.cpu():
             # Cut the state before it arrives at [-1,-1,...]
             nonzero = (state == self.padding_token).nonzero()
             if len(nonzero) > 0:
@@ -231,7 +242,7 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
         start_indices = torch.where(
             where_padding.any(dim=-1), torch.argmax(where_padding + 0, dim=-1), max_len
         )
-        done = start_indices == 0
+        done = start_indices == 1
         mask = torch.arange(max_len).unsqueeze(0).to(states.device) >= (
             start_indices - action_len[backward_action]
         ).unsqueeze(1)

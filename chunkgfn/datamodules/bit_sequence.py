@@ -133,6 +133,7 @@ class BitSequenceModule(BaseSequenceModule):
                 )
                 s_tensor = torch.zeros(s_idx.shape[0], len(self.atomic_tokens))
                 s_tensor[torch.arange(s_idx.shape[0]), s_idx] = 1
+                s_tensor = torch.cat([self.bos_token.unsqueeze(0), s_tensor], dim=0)
                 test_seq.append(s_tensor)
         test_seq = torch.stack(test_seq, dim=0)
         test_rs = self.compute_logreward(test_seq)

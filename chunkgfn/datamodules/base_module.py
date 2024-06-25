@@ -42,12 +42,12 @@ class BaseUnConditionalEnvironmentModule(LightningDataModule, ABC):
         self.num_train_iterations = num_train_iterations
 
     @abstractmethod
-    def preprocess_states(self, state: torch.Tensor) -> torch.Tensor:
+    def preprocess_states(self, state: torch.Tensor) -> Any:
         """Preprocess the state so that it can be input to the policy model.
         Args:
             state (torch.Tensor[batch_size, *state_shape]): The state.
         Returns:
-            processed_state (torch.Tensor[batch_size, *processed_state_shape]): The preprocessed state.
+            *output (Any): A possible a tuple of tensors/metadata to be fed to the model.
         """
         NotImplementedError
 
