@@ -2,15 +2,13 @@
 #SBATCH --partition=long
 #SBATCH --cpus-per-task=3
 #SBATCH --gres=gpu:rtx8000:1
-#SBATCH --mem=24G
-#SBATCH --time=6-00:00:00
-#SBATCH --output /network/scratch/v/vivianoj/chunkgfn/logs/rna_binding/slurm-%j.out
-#SBATCH --error /network/scratch/v/vivianoj/chunkgfn/logs/rna_binding/slurm-%j.err
+#SBATCH --mem=32G
+#SBATCH --time=1-06:00:00
+#SBATCH -o /network/scratch/o/oussama.boussif/slurm-%j.out
 
-eval "$(conda shell.bash hook)"
-conda activate chunkgfn
+module --quiet load python/3.10
+source $VENV/ai_scientist/bin/activate
 
-export WANDB_MODE="offline"
-export HYDRA_FULL_ERROR=1
+
 exec python main.py "$@"
 

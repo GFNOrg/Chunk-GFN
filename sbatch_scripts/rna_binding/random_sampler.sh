@@ -4,17 +4,17 @@ tasks_cutoff=(
     "L100_RNA1,20"
 )
 
-algorithms=(
-    "rna_a2c"
-    "rna_a2c_chunk"
-    "rna_a2c_chunk_replacement"
+experiments=(
+    "rna_random_sampler"
+    "rna_random_sampler_chunk"
+    "rna_random_sampler_chunk_replacement"
 )
 
 modes_path="${HOME}/Chunk-GFN/L14_RNA1_modes.pkl"
 
 for seed in 1998 2024 42
 do
-    for algo in "${algorithms[@]}"
+    for exp in "${experiments[@]}"
     do
         for task in "${tasks_cutoff[@]}"
         do
@@ -25,15 +25,16 @@ do
             cutoff=$((cutoff))
 
             sbatch sbatch_scripts/rna_binding/rna_binding.sh \
-            experiment=${algo} \
+            experiment=${exp} \
             task_name=rna_binding \
-            seed=${seed} \
             environment.task=${task} \
             environment.output_padding_mask=False \
             environment.modes_path=${modes_path} \
-            logger.wandb.name=${algo}_${task} \
+            seed=${seed} \
+            algo.replay_buffer.cutoff_distance=${cutoff} \
+            logger.wandb.name=${exp}_${task} \
             logger.wandb.group=rna_binding
-           
+
         done
     done
 done
