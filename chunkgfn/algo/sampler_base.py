@@ -212,7 +212,11 @@ class BaseSampler(ABC, LightningModule):
         Return:
             logits (torch.Tensor[batch_size, n_actions]): Forward logits.
         """
-        action_embedding = self.forward_policy(*self.env.preprocess_states(state))
+        processed = self.env.preprocess_states(state)
+        if isinstance(processed, tuple):
+            action_embedding = self.forward_policy(*processed)
+        else:
+            action_embedding = self.forward_policy(processed)
         dim = action_embedding.shape[-1]
         library_embeddings = self.get_library_embeddings()
         logits = torch.einsum("bd, nd -> bn", action_embedding, library_embeddings) / (
@@ -360,6 +364,8 @@ class BaseSampler(ABC, LightningModule):
         )
         batch_size = x.shape[0]
 
+        sampler_logreward = logreward
+
         if self.replay_buffer is not None:
             nsamples_replay = int(batch_size * self.hparams.ratio_from_replay_buffer)
             with torch.no_grad():
@@ -391,14 +397,16 @@ class BaseSampler(ABC, LightningModule):
             final_state = torch.cat(
                 [final_state[indices], samples["final_state"]], dim=0
             )
-            logreward = torch.cat([logreward[indices], samples["logreward"]], dim=0)
+
+            sampler_logreward = logreward[indices]
+            logreward = torch.cat([sampler_logreward, samples["logreward"]], dim=0)
 
         loss = self.compute_loss(trajectories, actions, dones, logreward)
         additional_metrics = self.env.compute_metrics(final_state)
 
         if loss is not None:
             self.train_loss(loss)
-        self.train_logreward(logreward.mean())
+        self.train_logreward(sampler_logreward.mean())
         self.train_trajectory_length(trajectory_length.float().mean())
 
         if loss is not None:
