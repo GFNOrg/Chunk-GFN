@@ -43,8 +43,6 @@ class ActionEncoder(nn.Module):
         )
         self.encoder = nn.TransformerEncoder(encoder_layers, num_layers)
         self.action_embedding_layer = nn.Linear(hidden_dim, action_embedding_dimension)
-        self.action_embedding_layer.weight.data.fill_(0.0)
-        self.action_embedding_layer.bias.data.fill_(0.0)
 
     def forward(self, x):
         x = self.embedding(x)

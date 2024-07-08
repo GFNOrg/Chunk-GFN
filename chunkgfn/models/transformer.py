@@ -1,6 +1,7 @@
 import math
 
 import torch
+from einops import repeat
 from torch import nn
 
 
@@ -33,30 +34,47 @@ class Transformer(nn.Module):
     def __init__(
         self,
         state_dim,
-        action_embedding_dim,
+        output_dim,
         hidden_dim,
         num_layers,
         num_head,
         max_len=60,
         dropout=0,
+        use_bos_token=False,
     ):
         super().__init__()
-        self.pos = PositionalEncoding(hidden_dim, dropout=dropout, max_len=max_len + 2)
+        if use_bos_token:
+            self.bos_token = nn.Parameter(torch.randn(state_dim))
+            self.pos = PositionalEncoding(
+                hidden_dim, dropout=dropout, max_len=max_len + 2
+            )
+        else:
+            self.bos_token = None
+            self.pos = PositionalEncoding(
+                hidden_dim, dropout=dropout, max_len=max_len + 1
+            )
         self.embedding = nn.Linear(state_dim, hidden_dim)
         encoder_layers = nn.TransformerEncoderLayer(
             hidden_dim, num_head, hidden_dim, dropout=dropout, batch_first=True
         )
         self.encoder = nn.TransformerEncoder(encoder_layers, num_layers)
-        self.action_embedding_layer = nn.Linear(hidden_dim, action_embedding_dim)
-        self.action_embedding_layer.weight.data.fill_(0.0)
-        self.action_embedding_layer.bias.data.fill_(0.0)
+        self.output = nn.Linear(hidden_dim, output_dim)
+        nn.init.zeros_(self.output.weight)
+        nn.init.zeros_(self.output.bias)
 
     def forward(self, x, mask=None):
+        bs, max_len, dim = x.shape
+        if self.bos_token is not None:
+            bos_token_ = repeat(self.bos_token, "d -> b t d", b=bs, t=1)
+            x = torch.cat([bos_token_, x], dim=1)
+            if mask is not None:
+                mask = torch.cat([torch.zeros(bs, 1, device=mask.device), mask], dim=1)
+
         x = self.embedding(x)
         x = self.pos(x)
 
         x = self.encoder(x, src_key_padding_mask=mask)
         pooled_x = x[:, 0]
 
-        y = self.action_embedding_layer(pooled_x)
+        y = self.output(pooled_x)
         return y
