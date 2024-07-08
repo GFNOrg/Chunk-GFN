@@ -4,15 +4,14 @@
 # python train.py experiment=example
 
 defaults:
-  - override /environment: bit_sequence.yaml
-  - override /algo: tb_gfn.yaml
+  - override /environment: rna_binding.yaml
+  - override /algo: a2c.yaml
   - override /trainer: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
 seed: 42
-
 
 environment:
   output_padding_mask: True
@@ -26,27 +25,25 @@ algo:
     _target_: chunkgfn.models.rnn.UnconditionalRNN
     num_layers: 1
     hidden_dim: 128
-    state_dim: 3
+    state_dim: 5
     action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
     act:
       _target_: torch.nn.ReLU
-
-  backward_policy:
-    _target_: chunkgfn.models.uniform_policy.UniformPolicy
-    action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
+  
+  critic:
+    _target_: chunkgfn.models.rnn.Critic
+    num_layers: 1
+    hidden_dim: 128
+    state_dim: 5
+    act:
+      _target_: torch.nn.ReLU
   
   action_embedder:
     _target_: chunkgfn.models.action_encoder.ActionModel
-    n_primitive_actions: 3
+    n_primitive_actions: 5
   
-  replay_buffer:
-    _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
-    capacity: 10000
-    cutoff_distance: 5
-    is_conditional: False
-  
-  reward_temperature: 0.333333
+
 
 logger:
   wandb:
-    group: "bit_sequence"
+    group: "rna_binding"

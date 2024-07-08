@@ -28,7 +28,8 @@ algo:
     state_dim: 3
     max_len: ${environment.max_len}
     num_head: 8
-    action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
+    output_dim: ${algo.action_embedder.action_embedding_dimension}
+    use_bos_token: True
 
   backward_policy:
     _target_: chunkgfn.models.uniform_policy.UniformPolicy

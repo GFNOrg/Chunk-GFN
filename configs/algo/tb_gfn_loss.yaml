@@ -1,4 +1,4 @@
-_target_: chunkgfn.algo.tb_gfn.TBGFN
+_target_: chunkgfn.algo.tb_gfn_loss.TBGFNLoss
 
 optimizer:
   _target_: torch.optim.Adam
@@ -41,3 +41,6 @@ reward_temperature: 0.33333 # Temperature for the reward
 n_onpolicy_samples: 512 # Number of on-policy samples to draw for each validation step
 replay_refactor: backward 
 chunk_algorithm: null
+
+initial_loss_threshold: 0.8
+loss_multiplier: 0.75

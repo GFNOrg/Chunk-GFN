@@ -4,7 +4,7 @@
 # python train.py experiment=example
 
 defaults:
-  - override /environment: bit_sequence.yaml
+  - override /environment: rna_binding.yaml
   - override /algo: tb_gfn.yaml
   - override /trainer: default.yaml
 
@@ -12,6 +12,7 @@ defaults:
 # this allows you to overwrite only specified parameters
 
 seed: 42
+
 
 environment:
   output_padding_mask: True
@@ -22,33 +23,29 @@ trainer:
 
 algo:
   forward_policy:
-    _target_: chunkgfn.models.transformer.Transformer
-    num_layers: 4
+    _target_: chunkgfn.models.rnn.UnconditionalRNN
+    num_layers: 1
     hidden_dim: 128
-    state_dim: 3
-    max_len: ${environment.max_len}
-    num_head: 8
-    output_dim: ${algo.action_embedder.action_embedding_dimension}
-    use_bos_token: True
+    state_dim: 5
+    action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
+    act:
+      _target_: torch.nn.ReLU
 
   backward_policy:
     _target_: chunkgfn.models.uniform_policy.UniformPolicy
     action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
   
   action_embedder:
-    _target_: chunkgfn.models.action_encoder.ActionEncoder
-    n_primitive_actions: 3
-    num_layers: 4
-    hidden_dim: 128
-    max_len: ${environment.max_len}
-    num_head: 8
+    _target_: chunkgfn.models.action_encoder.ActionModel
+    n_primitive_actions: 5
   
   replay_buffer:
     _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
     capacity: 10000
-    cutoff_distance: 5
+    cutoff_distance: 3
     is_conditional: False
-  reward_temperature: 0.2
+  
+  reward_temperature: 0.1
   chunk_algorithm: bpe
   chunk_type: basic
   n_chunks: 1
@@ -58,4 +55,4 @@ algo:
 
 logger:
   wandb:
-    group: "bit_sequence"
+    group: "rna_binding"
