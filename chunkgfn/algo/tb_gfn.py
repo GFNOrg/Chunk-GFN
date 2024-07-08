@@ -304,24 +304,16 @@ class TBGFN(BaseSampler):
         log_pf = rearrange(log_pf_, "(b t) ... -> b t ...", b=bs).sum(1)
 
         trajectories_backward = rearrange(trajectories[:, 1:], "b t ... -> (b t) ...")
-
         dones_backward = rearrange(dones[:, 1:], "b t ... -> (b t) ...")
 
+        logit_pb = self.get_backward_logits(trajectories_backward)
         backward_mask = self.env.get_backward_mask(trajectories_backward)
-
-        logit_pb = torch.where(backward_mask == 1, torch.tensor(0.0), -torch.inf).to(
-            logit_pf
-        )
-
         logit_pb = torch.where(
-            (logit_pb == -torch.inf).all(dim=-1).unsqueeze(1),
-            torch.tensor(0.0),
-            logit_pb,
+            backward_mask, logit_pb, torch.tensor(NEGATIVE_INFINITY, device=device)
         )
-        log_pb_ = torch.where(
-            dones_backward | self.env.is_initial_state(trajectories_backward),
-            torch.tensor(0.0),
-            Categorical(logits=logit_pb).log_prob(actions_),
+
+        log_pb_ = Categorical(logits=logit_pb).log_prob(actions_) * (
+            ~dones_backward + 0
         )
         log_pb = rearrange(log_pb_, "(b t) ... -> b t ...", b=bs).sum(1)
 
