@@ -91,9 +91,8 @@ class BitSequenceModule(BaseSequenceModule):
         self.visited.update(set(strings))
         dists = torch.tensor([[levenshtein(s, i) for i in self.modes] for s in strings])
         values, indices = torch.min(dists, dim=-1)
-        reward = 1 - values / self.len_modes[indices]
         mode_indices = indices[
-            reward > self.threshold
+            values <= self.threshold
         ].tolist()  # Find the indices of the modes that are close to the samples
         modes_found = set([self.modes[i] for i in mode_indices])
         self.discovered_modes.update(modes_found)
@@ -133,7 +132,6 @@ class BitSequenceModule(BaseSequenceModule):
                 )
                 s_tensor = torch.zeros(s_idx.shape[0], len(self.atomic_tokens))
                 s_tensor[torch.arange(s_idx.shape[0]), s_idx] = 1
-                s_tensor = torch.cat([self.bos_token.unsqueeze(0), s_tensor], dim=0)
                 test_seq.append(s_tensor)
         test_seq = torch.stack(test_seq, dim=0)
         test_rs = self.compute_logreward(test_seq)

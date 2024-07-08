@@ -104,6 +104,7 @@ class RNABindingModule(BaseSequenceModule):
         batch_size: int = 64,
         task: str = "L14_RNA1",
         modes_path: str | None = None,
+        dataset_path: str | None = None,
         num_workers: int = 0,
         pin_memory: bool = False,
         **kwargs,
@@ -126,6 +127,9 @@ class RNABindingModule(BaseSequenceModule):
         if modes_path is not None:
             with open(modes_path, "rb") as f:
                 self.modes = pickle.load(f)
+        if dataset_path is not None:
+            with open(dataset_path, "rb") as f:
+                self.dataset = pickle.load(f)
         super().__init__(
             atomic_tokens=atomic_tokens,
             max_len=params["seq_length"],
@@ -136,6 +140,7 @@ class RNABindingModule(BaseSequenceModule):
             pin_memory=pin_memory,
             **kwargs,
         )
+
         self.norm_values = self.compute_min_binding_energies()
 
     def compute_min_binding_energies(self):
@@ -173,9 +178,10 @@ class RNABindingModule(BaseSequenceModule):
                 start = self.conserved_region["start"]
                 pattern = self.conserved_region["pattern"]
 
-                # If region not conserved, fitness is 0
+                # If region not conserved, fitness is 0 so logreward is -infty but
+                # we clip to -10
                 if seq[start : start + len(pattern)] != pattern:
-                    logrewards.append(0)
+                    logrewards.append(-10)
                     continue
 
             # Energy is sum of binding energies across all targets
@@ -219,9 +225,12 @@ class RNABindingModule(BaseSequenceModule):
         """
         test_seq = []
 
-        starting_sequences = [self.starts[i] for i in self.starts]
+        if hasattr(self, "dataset"):
+            sequences = self.dataset
+        else:
+            sequences = [self.starts[i] for i in self.starts]
 
-        for seq in starting_sequences:
+        for seq in sequences:
             s_idx = torch.tensor(
                 [self.atomic_tokens.index(char) for char in seq]
                 + [self.atomic_tokens.index("<EOS>")]

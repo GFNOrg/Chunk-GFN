@@ -62,13 +62,11 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
         self.atomic_tokens = (
             [self.exit_action] + atomic_tokens
         )  # Atomic tokens for representing the states. Stays fixed during training.
+        self.s0 = -torch.ones(
+            1 + self.max_len, len(self.atomic_tokens)
+        )  # Initial state
         self.padding_token = -torch.ones(len(self.atomic_tokens))
         self.eos_token = torch.tensor([1] + [0] * (len(self.atomic_tokens) - 1))
-        self.bos_token = -2 * torch.ones(len(self.atomic_tokens))
-        # Initial state
-        self.s0 = torch.stack(
-            [self.bos_token] + [self.padding_token] * (1 + self.max_len)
-        )
         # Actions can change during training. Not to be confused with atomic_tokens.
         self.actions = self.atomic_tokens.copy()
 
@@ -153,8 +151,7 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
             raw (list[str]): List of states in their string representation.
         """
         strings = []
-        states_ = states[:, 1:]  # Remove BOS
-        for state in states_.cpu():
+        for state in states.cpu():
             # Cut the state before it arrives at [-1,-1,...]
             nonzero = (state == self.padding_token).nonzero()
             if len(nonzero) > 0:
@@ -242,7 +239,7 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
         start_indices = torch.where(
             where_padding.any(dim=-1), torch.argmax(where_padding + 0, dim=-1), max_len
         )
-        done = start_indices == 1
+        done = start_indices == 0
         mask = torch.arange(max_len).unsqueeze(0).to(states.device) >= (
             start_indices - action_len[backward_action]
         ).unsqueeze(1)
