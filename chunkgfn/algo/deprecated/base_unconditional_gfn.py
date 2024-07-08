@@ -1,8 +1,6 @@
-import time
 from abc import ABC, abstractmethod
 from typing import Any, Tuple
 
-import numpy as np
 import torch
 import wandb
 from einops import rearrange, repeat
@@ -16,7 +14,7 @@ from chunkgfn.replay_buffer.base_replay_buffer import ReplayBuffer
 from chunkgfn.replay_buffer.utils import extend_trajectories
 from chunkgfn.schedulers import Scheduler
 
-from ..constants import EPS, NEGATIVE_INFINITY
+from ...constants import EPS, NEGATIVE_INFINITY
 
 
 class UnConditionalSequenceGFN(ABC, LightningModule):
@@ -134,7 +132,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         for action, indices in action_indices.items():
             library_embeddings.append(
                 self.action_model(
-                    torch.LongTensor(indices).to(self.device).unsqueeze(0)
+                    torch.LongTensor(indices, device=self.device).unsqueeze(0)
                 )
             )
         library_embeddings = torch.cat(library_embeddings, dim=0)
@@ -174,14 +172,15 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
                 terminal_strings, alpha=self.hparams.alpha_pb
             )
         bs = final_state.shape[0]
+        device = final_state.device
         state = final_state.clone()
-        done = torch.zeros((bs)).to(final_state).bool()
+        done = torch.zeros((bs), device=device, dtype=bool)
 
         # Start unrolling the trajectories
         actions = []
         trajectories = []
         dones = []
-        dones.append(torch.ones((bs)).to(final_state).bool())
+        dones.append(torch.ones((bs), device=device, dtype=bool))
         while not done.all():
             backward_actions = self.trainer.datamodule.get_parent_actions(state)
             if self.hparams.pb == "kolya":
@@ -267,26 +266,26 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
         actions = []
         trajectories = []
         dones = []
-        done = torch.zeros((bs)).to(state).bool()
-        trajectory_length = (
-            torch.zeros((bs)).to(state).long()
+        done = torch.zeros((bs), device=self.device, dtype=bool)
+        trajectory_length = torch.zeros(
+            (bs), device=self.device, dtype=torch.long
         )  # This tracks the length of trajectory for each sample in the batch
 
         while not done.all():
             logit_pf = self.get_forward_logits(state)
-            uniform_dist_probs = torch.ones_like(logit_pf).to(logit_pf)
+            uniform_dist_probs = torch.ones_like(logit_pf, device=self.device)
 
             valid_actions_mask = self.trainer.datamodule.get_forward_mask(state)
 
             logit_pf = torch.where(
                 valid_actions_mask,
                 logit_pf,
-                torch.tensor(NEGATIVE_INFINITY).to(logit_pf),
+                torch.tensor(NEGATIVE_INFINITY, device=self.device),
             )
             uniform_dist_probs = torch.where(
                 valid_actions_mask,
                 uniform_dist_probs,
-                torch.tensor(0.0).to(uniform_dist_probs),
+                torch.tensor(0.0, device=self.device),
             )
 
             if train:
@@ -318,7 +317,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
             state = new_state.clone()
 
         trajectories.append(state)
-        dones.append(torch.ones((bs)).to(state).bool())
+        dones.append(torch.ones((bs), device=self.device, dtype=bool))
         trajectories = torch.stack(trajectories, dim=1)
         actions = torch.stack(actions, dim=1)
         dones = torch.stack(dones, dim=1)
@@ -642,7 +641,7 @@ class UnConditionalSequenceGFN(ABC, LightningModule):
 
     def on_validation_epoch_end(self):
         # Get on-policy samples from the GFN
-        dummy_batch = torch.arange(self.hparams.n_onpolicy_samples).to(self.device)
+        dummy_batch = torch.arange(self.hparams.n_onpolicy_samples, device=self.device)
         x, trajectories, actions, dones, final_state, logreward, trajectory_length = (
             self.sample(
                 dummy_batch,
