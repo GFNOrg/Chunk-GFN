@@ -103,6 +103,8 @@ class RNABindingModule(BaseSequenceModule):
         num_train_iterations: int,
         batch_size: int = 64,
         task: str = "L14_RNA1",
+        atomic_tokens: list[str] = ["A", "C", "G", "U"],
+        high_reward_threshold: int | None = None,
         modes_path: str | None = None,
         dataset_path: str | None = None,
         num_workers: int = 0,
@@ -112,9 +114,9 @@ class RNABindingModule(BaseSequenceModule):
         # this line allows to access init params with 'self.hparams' attribute
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(logger=False)
-        atomic_tokens = ["A", "C", "G", "U"]
 
         self.task = task
+        self.high_reward_threshold = high_reward_threshold
         self.modes = []
         self.len_modes = 0
 
@@ -142,6 +144,7 @@ class RNABindingModule(BaseSequenceModule):
         )
 
         self.norm_values = self.compute_min_binding_energies()
+        self.high_reward_strings = set()
 
     def compute_min_binding_energies(self):
         """Compute the lowest possible binding energy for each target."""
@@ -210,9 +213,19 @@ class RNABindingModule(BaseSequenceModule):
             modes_found = unique_strings.intersection(self.modes)
             self.discovered_modes.update(modes_found)
 
+        rewards = self.compute_logreward(states).exp()
+        if self.high_reward_threshold is not None:
+            (idx_where_high,) = torch.where(rewards >= self.high_reward_threshold)
+            idx_where_high = idx_where_high.tolist()
+            high_reward_strings = set([strings[i] for i in idx_where_high])
+            self.high_reward_strings.update(high_reward_strings)
+
         metrics = {
             "num_visited": float(len(self.visited)),
             "num_modes": float(len(self.discovered_modes)),
+            f"num_rewards_th_{self.high_reward_threshold}": float(
+                len(self.high_reward_strings)
+            ),
         }
 
         return metrics

@@ -3,9 +3,12 @@ from typing import List, Tuple, Union
 
 import numpy as np
 import torch
+from omegaconf import OmegaConf
+from omegaconf.listconfig import ListConfig
 from torch.utils.data import Dataset
 
 from chunkgfn.utils.cache import cached_property_with_invalidation
+
 
 from .base_module import BaseUnConditionalEnvironmentModule
 
@@ -59,6 +62,8 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
         # Environment variables
         self.discovered_modes = set()  # Tracks the number of modes we discovered
         self.visited = set()  # Tracks the number of states we visited
+        if isinstance(atomic_tokens, ListConfig):
+            atomic_tokens = OmegaConf.to_container(atomic_tokens, resolve=True)
         self.atomic_tokens = (
             [self.exit_action] + atomic_tokens
         )  # Atomic tokens for representing the states. Stays fixed during training.
@@ -157,7 +162,7 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
             if len(nonzero) > 0:
                 state = state[: nonzero[0][0]]
 
-            indices = state.argmax(dim=-1)
+            indices = state.argmax(dim=-1).tolist()
             strings.append("".join([self.atomic_tokens[i] for i in indices]))
         return strings
 
