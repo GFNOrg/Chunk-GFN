@@ -9,3 +9,5 @@ batch_size: 32
 num_workers: 0
 pin_memory: True
 persistent_workers: False
+atomic_tokens: ["0", "1"]
+actions: null # Pass a custom actions list, DO NOT PUT IT THE EXIT ACTION!!!

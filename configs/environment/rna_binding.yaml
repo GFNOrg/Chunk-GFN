@@ -10,4 +10,5 @@ output_padding_mask: False
 modes_path: /home/mila/o/oussama.boussif/Chunk-GFN/L14_RNA1_modes.pkl
 dataset_path: /home/mila/o/oussama.boussif/Chunk-GFN/L14_RNA1_dataset.pkl
 atomic_tokens: [A, C, G, U]
+actions: null # Pass a custom actions list, DO NOT PUT IT THE EXIT ACTION!!!
 high_reward_threshold: 0.9

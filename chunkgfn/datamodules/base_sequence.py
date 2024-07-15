@@ -9,7 +9,6 @@ from torch.utils.data import Dataset
 
 from chunkgfn.utils.cache import cached_property_with_invalidation
 
-
 from .base_module import BaseUnConditionalEnvironmentModule
 
 
@@ -41,6 +40,7 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
         atomic_tokens: List[str],
         max_len: int,
         num_train_iterations: int,
+        actions: List[str] | None = None,
         batch_size: int = 64,
         sample_exact_length: bool = False,
         output_padding_mask: bool = False,
@@ -64,20 +64,34 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
         self.visited = set()  # Tracks the number of states we visited
         if isinstance(atomic_tokens, ListConfig):
             atomic_tokens = OmegaConf.to_container(atomic_tokens, resolve=True)
+        assert set(atomic_tokens) <= set(
+            actions
+        ), "Your proposed set of actions should contain all actions in atomic_tokens."
+        assert all(
+            [len(set(a).intersection(set(atomic_tokens))) > 0 for a in actions]
+        ), "Your specified set of actions contains actions not composed of the ones in atomic_tokens."
+
         self.atomic_tokens = (
             [self.exit_action] + atomic_tokens
         )  # Atomic tokens for representing the states. Stays fixed during training.
+
         self.s0 = -torch.ones(
             1 + self.max_len, len(self.atomic_tokens)
         )  # Initial state
         self.padding_token = -torch.ones(len(self.atomic_tokens))
         self.eos_token = torch.tensor([1] + [0] * (len(self.atomic_tokens) - 1))
         # Actions can change during training. Not to be confused with atomic_tokens.
-        self.actions = self.atomic_tokens.copy()
+        if actions is None:
+            self.actions = self.atomic_tokens.copy()
+            self.action_len = torch.ones(
+                len(self.actions)
+            ).long()  # Length of each action. Can change during training.
+        else:
+            self.actions = [self.exit_action] + actions
+            self.action_len = torch.tensor(
+                [1 if a in self.atomic_tokens else len(a) for a in self.actions]
+            )
 
-        self.action_len = torch.ones(
-            len(self.actions)
-        ).long()  # Length of each action. Can change during training.
         self.action_frequency = torch.zeros(
             len(self.actions)
         )  # Tracks the frequency of each action. Can change during training.
