@@ -197,10 +197,13 @@ class RNABindingModule(BaseSequenceModule):
 
         return torch.tensor(logrewards)
 
-    def compute_metrics(self, states: torch.Tensor) -> dict[str, torch.Tensor]:
+    def compute_metrics(
+        self, states: torch.Tensor, logrewards: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
         """Compute metrics for the given states.
         Args:
             states (torch.Tensor[batch_size, max_len, dim]): Batch of states.
+            logrewards (torch.Tensor[batch_size]): Batch of logrewards.
         Returns:
             metrics (dict[str, torch.Tensor]): Dictionary of metrics.
         """
@@ -213,7 +216,7 @@ class RNABindingModule(BaseSequenceModule):
             modes_found = unique_strings.intersection(self.modes)
             self.discovered_modes.update(modes_found)
 
-        rewards = self.compute_logreward(states).exp()
+        rewards = logrewards.exp()
         if self.high_reward_threshold is not None:
             (idx_where_high,) = torch.where(rewards >= self.high_reward_threshold)
             idx_where_high = idx_where_high.tolist()

@@ -64,12 +64,13 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
         self.visited = set()  # Tracks the number of states we visited
         if isinstance(atomic_tokens, ListConfig):
             atomic_tokens = OmegaConf.to_container(atomic_tokens, resolve=True)
-        assert set(atomic_tokens) <= set(
-            actions
-        ), "Your proposed set of actions should contain all actions in atomic_tokens."
-        assert all(
-            [len(set(a).intersection(set(atomic_tokens))) > 0 for a in actions]
-        ), "Your specified set of actions contains actions not composed of the ones in atomic_tokens."
+        if actions is not None:
+            assert (
+                set(atomic_tokens) <= set(actions)
+            ), "Your proposed set of actions should contain all actions in atomic_tokens."
+            assert all(
+                [len(set(a).intersection(set(atomic_tokens))) > 0 for a in actions]
+            ), "Your specified set of actions contains actions not composed of the ones in atomic_tokens."
 
         self.atomic_tokens = (
             [self.exit_action] + atomic_tokens

@@ -78,7 +78,9 @@ class BitSequenceModule(BaseSequenceModule):
         reward = 1 - values / self.len_modes[indices]
         return reward
 
-    def compute_metrics(self, states: torch.Tensor) -> dict[str, torch.Tensor]:
+    def compute_metrics(
+        self, states: torch.Tensor, logrewards: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
         """Compute metrics for the given states.
         Args:
             states (torch.Tensor[batch_size, max_len, dim]): Batch of states.

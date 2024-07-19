@@ -98,7 +98,7 @@ class TBGFNLoss(TBGFN):
             logreward = torch.cat([sampler_logreward, samples["logreward"]], dim=0)
 
         loss = self.compute_loss(trajectories, actions, dones, logreward)
-        additional_metrics = self.env.compute_metrics(final_state)
+        additional_metrics = self.env.compute_metrics(final_state, logreward)
 
         if loss is not None:
             self.train_loss(loss)
