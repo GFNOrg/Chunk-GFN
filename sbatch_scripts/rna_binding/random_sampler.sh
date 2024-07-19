@@ -24,12 +24,19 @@ do
             cutoff="${fields[1]}"
             cutoff=$((cutoff))
 
+            if [[ "$task" == "L14_RNA1" ]]; then
+                dataset_path="${HOME}/Chunk-GFN/L14_RNA1_dataset.pkl"
+            else
+                dataset_path=null
+            fi
+
             sbatch sbatch_scripts/rna_binding/rna_binding.sh \
             experiment=${exp} \
             task_name=rna_binding \
             environment.task=${task} \
             environment.output_padding_mask=False \
             environment.modes_path=${modes_path} \
+            environment.dataset_path=${dataset_path} \
             seed=${seed} \
             algo.replay_buffer.cutoff_distance=${cutoff} \
             logger.wandb.name=${exp}_${task} \

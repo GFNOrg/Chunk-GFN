@@ -24,6 +24,12 @@ do
             cutoff="${fields[1]}"
             cutoff=$((cutoff))
 
+            if [[ "$task" == "L14_RNA1" ]]; then
+                dataset_path="${HOME}/Chunk-GFN/L14_RNA1_dataset.pkl"
+            else
+                dataset_path=null
+            fi
+
             sbatch sbatch_scripts/rna_binding/rna_binding.sh \
             experiment=${algo} \
             task_name=rna_binding \
@@ -31,6 +37,7 @@ do
             environment.task=${task} \
             environment.output_padding_mask=False \
             environment.modes_path=${modes_path} \
+            environment.dataset_path=${dataset_path} \
             logger.wandb.name=${algo}_${task} \
             logger.wandb.group=rna_binding
            
