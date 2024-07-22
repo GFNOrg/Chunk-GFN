@@ -386,39 +386,42 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
         self.data_val = SequenceDataset(val_seq, val_rs)
         self.data_test = SequenceDataset(test_seq, test_rs)
 
-    def compute_logN(self, terminal_string, alpha):
+    def compute_logN(self, states, alpha):
         """
         Returns the weighted number of trajectories, according to Kolya's formula.
 
         Args :
-            terminal_string : str, the terminal string
+            states :  batch of terminal states, shape (bs, max_len, dim)
             alpha : float, temperature parameter
         Returns:
-            logN : dict, where:
-                - keys are all possible substates that can be used to construct terminal_string,
-                - Value is the log-weighted number of trajectories that go through that substate, given terminal_string.
-            mask_back_action : tensor of size len(terminal_string) x len(actions), where mask_back_action[i,j] is 1 if action j is a parent of terminal_string[:i]
+            logN : tensor, shape (bs, max_len + 1) , where logN[i,j] is the log-weighted number of trajectories that go through state[i][:j]
         """
-        atomic_traj = list(terminal_string.replace("<EOS>", ""))
-        logN = {"": 0}
-        mask_back_action = torch.ones(
-            len(terminal_string), len(self.actions)
-        )  # Parents mask. Is 1 if the action is a parent of the current string
-        actions = {action: len(action) for action in self.actions}
-        for i in range(1, len(atomic_traj) + 1):
-            parents_i = []
-            for action, j in actions.items():
-                if terminal_string[i - j : i] == action:
-                    mask_back_action[i - 1, self.actions.index(action)] = 0
-                    parents_i.append(terminal_string[: i - j])
+        logN = torch.zeros(states.shape[0], states.shape[1] + 1)
+        logN[:,1:] = float("Inf")
+        
+        for i in range(1, self.max_len + 1):
+            mask = ~ (states[:, :i] == self.padding_token).all(dim=-1).any(dim=-1) # shape (bs)
+            substate = - torch.ones(states.shape)
+            substate[:, :i] = states[:, :i]
+            parent_actions = self.get_backward_mask(substate)
+            # If token_lens=0, it is not a possible parent action
+            token_lens = self.action_len.unsqueeze(0)*parent_actions # shape (bs, n_actions)
+            #logN shape : (bs, max_len + 1)
+            logN_parents = torch.gather(logN, dim = 1, index = i - token_lens) * parent_actions
+            logN[mask, i] = alpha + torch.logsumexp(logN_parents[mask], dim=1)
+        
+        return logN
+    
 
-            logN_parents_i = torch.Tensor([logN[s] for s in parents_i])
-            logN[terminal_string[:i]] = (
-                alpha + torch.logsumexp(logN_parents_i, dim=0).item()
-            )
-        return logN, mask_back_action
+    def get_logpb_state(self, logN, state, alpha):
+        parent_actions = self.get_backward_mask(state)
+        token_lens = self.action_len.unsqueeze(0)*parent_actions # shape (bs, n_actions)
+        i = self.max_len - torch.where(state == -1).sum(dim = 1) 
+        logN_parents = torch.gather(logN, dim = 1, index = i - token_lens)
+        return alpha + logN_parents - logN
 
-    def get_logpb_state(self, string, terminal_string, alpha, logN, mask_back_action):
+
+    def get_logpb_state(self, state, alpha, logN, mask_back_action):
         """
         Computes the logpb of each action in the library given the current state ( = string), according to Kolya's formula.
 
