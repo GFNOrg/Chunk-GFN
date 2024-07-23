@@ -1,9 +1,11 @@
 from torch import nn
 
+from .base_policy import BasePolicy
 
-class UnconditionalRNN(nn.Module):
+
+class UnconditionalRNN(BasePolicy):
     def __init__(self, num_layers, hidden_dim, state_dim, act, action_embedding_dim):
-        super(UnconditionalRNN, self).__init__()
+        super().__init__()
         self.num_layers = num_layers
         self.hidden_dim = hidden_dim
         self.state_dim = state_dim

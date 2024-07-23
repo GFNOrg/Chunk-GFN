@@ -52,6 +52,10 @@ class TBGFN(BaseSampler):
     def logZ(self):
         return self._logZ.sum()
 
+    def setup(self, stage):
+        super().setup(stage)
+        self.backward_policy.set_environment(self.env)
+
     def configure_optimizers(self):
         params = []
         if self.forward_policy is not None and has_trainable_parameters(
@@ -111,15 +115,26 @@ class TBGFN(BaseSampler):
             logits (torch.Tensor[batch_size, n_actions]): Forward logits.
         """
         processed = self.env.preprocess_states(state)
+        if self.backward_policy is not None and has_trainable_parameters(
+            self.backward_policy
+        ):
+            # If the backward policy is trainable, use action embeddings, otherwise,
+            # don't use them and output logits directly.
+            if isinstance(processed, tuple):
+                action_embedding = self.backward_policy(*processed)
+            else:
+                action_embedding = self.backward_policy(processed)
+            dim = action_embedding.shape[-1]
+            library_embeddings = self.get_library_embeddings()
+            logits = torch.einsum(
+                "bd, nd -> bn", action_embedding, library_embeddings
+            ) / (dim**0.5)  # Same as in softmax
+            return logits
+
         if isinstance(processed, tuple):
-            action_embedding = self.backward_policy(*processed)
+            logits = self.backward_policy(*processed)
         else:
-            action_embedding = self.backward_policy(processed)
-        dim = action_embedding.shape[-1]
-        library_embeddings = self.get_library_embeddings()
-        logits = torch.einsum("bd, nd -> bn", action_embedding, library_embeddings) / (
-            dim**0.5
-        )  # Same as in softmax
+            logits = self.backward_policy(processed)
         return logits
 
     @torch.no_grad()

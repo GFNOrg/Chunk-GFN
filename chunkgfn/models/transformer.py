@@ -4,6 +4,8 @@ import torch
 from einops import repeat
 from torch import nn
 
+from .base_policy import BasePolicy
+
 
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, dropout=0.1, max_len=5000):
@@ -30,7 +32,7 @@ def generate_square_subsequent_mask(sz: int):
     return torch.triu(torch.ones(sz, sz) * float("-inf"), diagonal=1)
 
 
-class Transformer(nn.Module):
+class Transformer(BasePolicy):
     def __init__(
         self,
         state_dim,
