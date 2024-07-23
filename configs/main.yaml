@@ -5,7 +5,7 @@
 defaults:
   - _self_
   - environment: bit_sequence.yaml
-  - algo: tb_gfn_chunk_prioritized.yaml
+  - algo: tb_gfn.yaml
   - callbacks: default
   - logger: wandb # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
   - trainer: default
