@@ -397,60 +397,63 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
             logN : tensor, shape (bs, max_len + 1) , where logN[i,j] is the log-weighted number of trajectories that go through state[i][:j]
         """
         logN = torch.zeros(states.shape[0], states.shape[1] + 1)
-        logN[:,1:] = float("Inf")
-        
-        for i in range(1, self.max_len + 1):
-            mask = ~ (states[:, :i] == self.padding_token).all(dim=-1).any(dim=-1) # shape (bs)
-            substate = - torch.ones(states.shape)
+        logN[:, 1:] = float("inf")
+
+        for i in range(1, self.max_len + 2):
+            mask = ~(states[:, :i] == self.padding_token).all(dim=-1).any(
+                dim=-1
+            )  # shape (bs)
+            substate = -torch.ones(states.shape)
             substate[:, :i] = states[:, :i]
             parent_actions = self.get_backward_mask(substate)
             # If token_lens=0, it is not a possible parent action
-            token_lens = self.action_len.unsqueeze(0)*parent_actions # shape (bs, n_actions)
-            #logN shape : (bs, max_len + 1)
-            logN_parents = torch.gather(logN, dim = 1, index = i - token_lens) * parent_actions
+            token_lens = (
+                self.action_len.unsqueeze(0) * parent_actions
+            )  # shape (bs, n_actions)
+            # logN shape : (bs, max_len + 2)
+            logN_parents = torch.where(
+                parent_actions,
+                torch.gather(logN, dim=1, index=i - token_lens),
+                -torch.inf,
+            )
             logN[mask, i] = alpha + torch.logsumexp(logN_parents[mask], dim=1)
-        
+
         return logN
-    
 
     def get_logpb_state(self, logN, state, alpha):
+        def find_last_non_padding_row(tensor, padding_token):
+            """Find the index of the last row that doesn't contain the padding token.
+            Args:
+                tensor [batch_size, max_len, dim]
+                padding_token [dim]
+            """
+            # Create a mask for non-negative rows
+            mask = (tensor != padding_token).all(dim=-1)
+
+            # Flip the mask along the row dimension and find the first True
+            indices = mask.flip(dims=[1]).float().argmax(dim=1)
+
+            # Convert the index to count from the start, not the end
+            indices = tensor.shape[1] - 1 - indices
+
+            # Handle cases where all rows contain -1
+            all_negative = (~mask).all(dim=1)
+            indices[all_negative] = -1  # or any other suitable value
+
+            return indices
+
         parent_actions = self.get_backward_mask(state)
-        token_lens = self.action_len.unsqueeze(0)*parent_actions # shape (bs, n_actions)
-        i = self.max_len - torch.where(state == -1).sum(dim = 1) 
-        logN_parents = torch.gather(logN, dim = 1, index = i - token_lens)
-        return alpha + logN_parents - logN
+        token_lens = (
+            self.action_len.unsqueeze(0) * parent_actions
+        )  # shape (bs, n_actions)
+        i = find_last_non_padding_row(state, self.padding_token)
+        logN_parents = torch.where(
+            parent_actions,
+            torch.gather(logN, dim=1, index=i.unsqueeze(1) + 1 - token_lens),
+            -torch.inf,
+        )
 
-
-    def get_logpb_state(self, state, alpha, logN, mask_back_action):
-        """
-        Computes the logpb of each action in the library given the current state ( = string), according to Kolya's formula.
-
-        Args :
-            string : str, the current state
-            terminal_string : str, the terminal state
-            alpha : float, temperature parameter
-            N : dict, the weighted number of trajectories given terminal_string
-            mask_back_action : tensor of size len(terminal_string) x len(actions), where mask_back_action[i,j] is 1 if action j is a parent of terminal_string[:i]
-
-        Returns :
-            logpb : tensor of size len(actions), where logpb[j] is the logpb of choosing action j for the current state string.
-        """
-        assert terminal_string[: len(string)] == string
-        assert list(logN.keys())[-1] == terminal_string.replace("<EOS>", "")
-        logpb = -torch.ones(len(self.actions)) * float("Inf")
-        if string[-5:] == "<EOS>":
-            logpb[0] = 1  # Action of removing the EOS
-        elif len(string) > 0:
-            mask = mask_back_action[len(string) - 1]
-            ixs = np.where(mask == 0)[0]
-            for j in ixs:
-                logpb[j] = alpha + logN[string[: -len(self.actions[j])]] - logN[string]
-        elif len(string) == 0:
-            logpb = torch.zeros(len(self.actions))
-            # When no action is available, just fill with uniform because
-            # it won't be picked anyway in the backward_step.
-            # Doing this avoids having nan when computing probabilities
-        return logpb
+        return alpha + logN_parents - logN[range(logN.shape[0]), i].unsqueeze(1)
 
     def get_logpb_traj(self, trajectory, alpha, logN):
         """
