@@ -396,20 +396,20 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
         Returns:
             logN : tensor, shape (bs, max_len + 1) , where logN[i,j] is the log-weighted number of trajectories that go through state[i][:j]
         """
-        logN = torch.zeros(states.shape[0], states.shape[1] + 1)
+        logN = torch.zeros(states.shape[0], states.shape[1] + 1, device=states.device)
         logN[:, 1:] = float("inf")
+        padding_token = self.padding_token.to(states.device)
+        action_len = self.action_len.unsqueeze(0).to(states.device)
 
         for i in range(1, self.max_len + 2):
-            mask = ~(states[:, :i] == self.padding_token).all(dim=-1).any(
+            mask = ~(states[:, :i] == padding_token).all(dim=-1).any(
                 dim=-1
             )  # shape (bs)
-            substate = -torch.ones(states.shape)
+            substate = -torch.ones(states.shape).to(states.device)
             substate[:, :i] = states[:, :i]
             parent_actions = self.get_backward_mask(substate)
             # If token_lens=0, it is not a possible parent action
-            token_lens = (
-                self.action_len.unsqueeze(0) * parent_actions
-            )  # shape (bs, n_actions)
+            token_lens = action_len * parent_actions  # shape (bs, n_actions)
             # logN shape : (bs, max_len + 2)
             logN_parents = torch.where(
                 parent_actions,
@@ -444,9 +444,9 @@ class BaseSequenceModule(BaseUnConditionalEnvironmentModule, ABC):
 
         parent_actions = self.get_backward_mask(state)
         token_lens = (
-            self.action_len.unsqueeze(0) * parent_actions
+            self.action_len.unsqueeze(0).to(state.device) * parent_actions
         )  # shape (bs, n_actions)
-        i = find_last_non_padding_row(state, self.padding_token)
+        i = find_last_non_padding_row(state, self.padding_token.to(state.device))
         logN_parents = torch.where(
             parent_actions,
             torch.gather(logN, dim=1, index=i.unsqueeze(1) + 1 - token_lens),
