@@ -1,0 +1,19 @@
+_target_: chunkgfn.algo.random_sampler.RandomSampler
+
+
+replay_buffer:
+  _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
+  capacity: 10000
+  is_conditional: False
+  cutoff_distance: 1.4
+
+
+monitor: train/logreward
+ratio_from_replay_buffer: 0.55 # Ratio of samples from replay buffer
+chunk_algorithm: bpe
+chunk_type: replacement
+total_library_size: 20
+n_chunks: 1
+n_samples: 5000
+library_update_frequency: 2
+n_onpolicy_samples: 512

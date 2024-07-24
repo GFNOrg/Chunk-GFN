@@ -1,0 +1,58 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+defaults:
+  - override /environment: rna_binding.yaml
+  - override /algo: tb_gfn.yaml
+  - override /trainer: default.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+seed: 42
+
+
+environment:
+  output_padding_mask: True
+
+trainer:
+  max_epochs: 250
+  check_val_every_n_epoch: 10
+
+algo:
+  forward_policy:
+    _target_: chunkgfn.models.rnn.UnconditionalRNN
+    num_layers: 1
+    hidden_dim: 128
+    state_dim: 5
+    action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
+    act:
+      _target_: torch.nn.ReLU
+
+  backward_policy:
+    _target_: chunkgfn.models.uniform_policy.UniformPolicy
+    action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
+  
+  action_embedder:
+    _target_: chunkgfn.models.action_encoder.ActionModel
+    n_primitive_actions: 5
+  
+  replay_buffer:
+    _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
+    capacity: 10000
+    cutoff_distance: 3
+    is_conditional: False
+  
+  reward_temperature: 0.1
+  chunk_algorithm: bpe
+  chunk_type: basic
+  n_chunks: 1
+  library_update_frequency: 10
+  n_samples: 10000
+  n_trajectories: 5
+
+logger:
+  wandb:
+    group: "rna_binding"

@@ -1,17 +1,17 @@
 maxlen_cutoff=(
-    "32,6",
-    "64,12",
-    "128,25"
+    "64,12,32",
+    "128,25,32"
 )
 
-algorithms=(
-    "bit_sequence_chunk_prioritized_a2c"
-    "bit_sequence_prioritized_a2c"
+experiments=(
+    "bit_sequence_a2c"
+    "bit_sequence_a2c_chunk"
+    "bit_sequence_a2c_chunk_replacement"
 )
 
 for seed in 1998 2024 42
 do
-    for algo in "${algorithms[@]}"
+    for exp in "${experiments[@]}"
     do
         for task in "${maxlen_cutoff[@]}"
         do
@@ -21,31 +21,17 @@ do
             length=$((length))
             cutoff="${fields[1]}"
             cutoff=$((cutoff))
+            batch_size="${fields[2]}"
+            batch_size=$((batch_size))
 
-            if [[ $algo == *"chunk"* ]]; then
-                sbatch sbatch_scripts/bit_sequence/bit_sequence.sh \
-                experiment=${algo} \
-                task_name=bit_sequence \
-                seed=${seed} \
-                data.max_len=${length} \
-                gfn.chunk_algorithm=bpe \
-                gfn.library_update_frequency=10 \
-                gfn.n_samples=10000 \
-                gfn.replay_buffer.cutoff_distance=${cutoff} \
-                gfn.reward_temperature=0.3333333333333333 \
-                logger.wandb.name=${algo}_${length}_bpe \
-                logger.wandb.group=bit_sequence    
-            else
-                sbatch sbatch_scripts/bit_sequence/bit_sequence.sh \
-                experiment=${algo} \
-                task_name=bit_sequence \
-                seed=${seed} \
-                data.max_len=${length} \
-                gfn.replay_buffer.cutoff_distance=${cutoff} \
-                gfn.reward_temperature=0.3333333333333333 \
-                logger.wandb.name=${algo}_${length}_bpe \
-                logger.wandb.group=bit_sequence  
-            fi        
+            sbatch sbatch_scripts/bit_sequence/bit_sequence.sh \
+            experiment=${exp} \
+            task_name=bit_sequence \
+            seed=${seed} \
+            environment.max_len=${length} \
+            environment.batch_size=${batch_size} \
+            logger.wandb.name=${exp}_${length}_bpe \
+            logger.wandb.group=bit_sequence        
         done
     done
 done

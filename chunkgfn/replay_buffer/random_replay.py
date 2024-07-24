@@ -10,8 +10,9 @@ class RandomReplay(ReplayBuffer):
         reward_sampling: bool = False,
         capacity: int = 1000,
         is_conditional: bool = True,
+        **kwargs,
     ):
-        super().__init__(capacity, is_conditional)
+        super().__init__(capacity, is_conditional, **kwargs)
         self.reward_sampling = (
             reward_sampling  # Whether to sample according to the reward
         )

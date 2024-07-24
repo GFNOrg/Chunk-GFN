@@ -1,0 +1,14 @@
+_target_: chunkgfn.environment.rna_binding.RNABindingModule
+
+num_train_iterations: 100
+batch_size: 64
+num_workers: 3
+pin_memory: True
+persistent_workers: False
+task: L14_RNA1
+output_padding_mask: False
+modes_path: /home/mila/o/oussama.boussif/Chunk-GFN/L14_RNA1_modes.pkl
+dataset_path: /home/mila/o/oussama.boussif/Chunk-GFN/L14_RNA1_dataset.pkl
+atomic_tokens: [A, C, G, U]
+actions: null # Pass a custom actions list, DO NOT PUT IT THE EXIT ACTION!!!
+high_reward_threshold: 0.9

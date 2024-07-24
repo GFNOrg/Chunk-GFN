@@ -1,15 +1,16 @@
 tasks_cutoff=(
-    "L14_RNA1,3",
+#    "L14_RNA1,3",
     "L50_RNA1,10",
     "L100_RNA1,20"
 )
 
 algorithms=(
-    "rna_binding_chunk_prioritized_a2c"
-    "rna_binding_prioritized_a2c"
+    "rna_a2c"
+    "rna_a2c_chunk"
+    "rna_a2c_chunk_replacement"
 )
 
-modes_path="${HOME}/code/chunkgfn/L14_RNA1_modes.pkl"
+modes_path="${HOME}/Chunk-GFN/L14_RNA1_modes.pkl"
 
 for seed in 1998 2024 42
 do
@@ -23,32 +24,23 @@ do
             cutoff="${fields[1]}"
             cutoff=$((cutoff))
 
-            if [[ $algo == *"chunk"* ]]; then
-                sbatch sbatch_scripts/rna_binding/rna_binding.sh \
-                experiment=${algo} \
-                task_name=rna_binding \
-                seed=${seed} \
-                data.task=${task} \
-                data.modes_path=${modes_path} \
-                gfn.chunk_algorithm=bpe \
-                gfn.library_update_frequency=25 \
-                gfn.n_samples=10000 \
-                gfn.replay_buffer.cutoff_distance=${cutoff} \
-                gfn.reward_temperature=0.125 \
-                logger.wandb.name=${algo}_${task}_bpe \
-                logger.wandb.group=rna_binding
+            if [[ "$task" == "L14_RNA1" ]]; then
+                dataset_path="${HOME}/Chunk-GFN/L14_RNA1_dataset.pkl"
             else
-                sbatch sbatch_scripts/rna_binding/rna_binding.sh \
-                experiment=${algo} \
-                task_name=rna_binding \
-                seed=${seed} \
-                data.task=${task} \
-                data.modes_path=${modes_path} \
-                gfn.replay_buffer.cutoff_distance=${cutoff} \
-                gfn.reward_temperature=0.125 \
-                logger.wandb.name=${algo}_${task}_bpe \
-                logger.wandb.group=rna_binding
+                dataset_path=null
             fi
+
+            sbatch sbatch_scripts/rna_binding/rna_binding.sh \
+            experiment=${algo} \
+            task_name=rna_binding \
+            seed=${seed} \
+            environment.task=${task} \
+            environment.output_padding_mask=False \
+            environment.modes_path=${modes_path} \
+            environment.dataset_path=${dataset_path} \
+            logger.wandb.name=${algo}_${task} \
+            logger.wandb.group=rna_binding
+           
         done
     done
 done

@@ -4,7 +4,7 @@ import torch
 
 
 class ReplayBuffer(ABC):
-    def __init__(self, capacity: int = 1000, is_conditional: bool = True):
+    def __init__(self, capacity: int = 1000, is_conditional: bool = True, **kwargs):
         self.capacity = capacity
         self.is_conditional = is_conditional
         self.storage = {
@@ -18,6 +18,17 @@ class ReplayBuffer(ABC):
 
     def __len__(self):
         return len(self.storage["input"])
+
+    def clear(self):
+        """Clear the replay buffer."""
+        self.storage = {
+            "input": torch.Tensor(),
+            "trajectories": torch.Tensor(),
+            "actions": torch.Tensor(),
+            "dones": torch.Tensor(),
+            "final_state": torch.Tensor(),
+            "logreward": torch.Tensor(),
+        }
 
     @abstractmethod
     def sample(self, num_samples: int):

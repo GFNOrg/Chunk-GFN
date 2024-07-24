@@ -1,0 +1,28 @@
+_target_: chunkgfn.algo.a2c.A2C
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  weight_decay: 0.0
+
+scheduler: null
+
+forward_policy: null
+  
+critic: null
+
+action_embedder:
+  _target_: chunkgfn.models.action_encoder.ActionModel
+  n_primitive_actions: 3
+  hidden_dim: 128
+  action_embedding_dimension: 128
+
+forward_policy_lr: 1e-4
+critic_lr: 1e-4
+action_embedder_lr: 1e-3
+monitor: train/logreward
+
+n_onpolicy_samples: 512 # Number of on-policy samples to draw for each validation step
+entropy_coeff: 0.01 # Entropy coefficient for the policy
+
+chunk_algorithm: null

@@ -1,0 +1,43 @@
+_target_: chunkgfn.algo.tb_gfn.TBGFN
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  weight_decay: 0.0
+
+scheduler: null
+
+forward_policy: null
+  
+backward_policy: null
+
+action_embedder:
+  _target_: chunkgfn.models.action_encoder.ActionModel
+  n_primitive_actions: 3
+  hidden_dim: 128
+  action_embedding_dimension: 128
+
+epsilon_scheduler:
+  _target_: chunkgfn.schedulers.linear_schedule.LinearSchedule
+  initial_value: 0.5
+  final_value: 0.1
+  max_epochs: ${trainer.max_epochs}
+
+replay_buffer: null
+
+forward_policy_lr: 1e-4
+backward_policy_lr: 1e-4
+partition_lr: 1e-3
+action_embedder_lr: 1e-3
+
+num_partition_nodes: 64
+partition_init: 90
+
+monitor: val/logreward
+
+ratio_from_replay_buffer: 0.55 # Ratio of samples from replay buffer
+n_trajectories: 1 # Number of test trajectories to sample
+reward_temperature: 0.33333 # Temperature for the reward
+n_onpolicy_samples: 512 # Number of on-policy samples to draw for each validation step
+replay_refactor: backward 
+chunk_algorithm: null

@@ -1,0 +1,13 @@
+_target_: chunkgfn.environment.ccds_sequence.CCDSSequenceModule
+
+max_len: 128
+num_train_iterations: 100
+task: "rna"
+num_modes: 60
+n_held_out: 10
+batch_size: 64
+sample_exact_length: True # Whether to always sample sequences of length `max_len` or not -- should be true when using max-len.
+threshold: 0.9
+num_workers: 0
+pin_memory: True
+persistent_workers: False

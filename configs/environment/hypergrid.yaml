@@ -1,0 +1,13 @@
+_target_: chunkgfn.environment.hypergrid.HyperGridModule
+
+ndim: 4
+side_length: 16
+num_modes: 15
+R0: 0.1
+R1: 0.5
+R2: 2
+num_train_iterations: 20
+batch_size: 64
+num_workers: 0  # For OSX.
+pin_memory: True
+persistent_workers: False
