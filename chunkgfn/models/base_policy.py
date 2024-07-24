@@ -1,6 +1,6 @@
 from torch import nn
 
-from chunkgfn.datamodules.base_module import BaseUnConditionalEnvironmentModule
+from chunkgfn.environment.base_module import BaseUnConditionalEnvironmentModule
 
 
 class BasePolicy(nn.Module):

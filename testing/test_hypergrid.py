@@ -2,7 +2,7 @@ import lightning as L
 import pytest
 import torch
 
-from chunkgfn.datamodules.hypergrid import HyperGridModule
+from chunkgfn.environment.hypergrid import HyperGridModule
 
 
 @pytest.mark.parametrize("ndim", [2, 4, 6, 8])

@@ -1,4 +1,4 @@
-_target_: chunkgfn.datamodules.ccds_sequence.CCDSSequenceModule
+_target_: chunkgfn.environment.ccds_sequence.CCDSSequenceModule
 
 max_len: 128
 num_train_iterations: 100

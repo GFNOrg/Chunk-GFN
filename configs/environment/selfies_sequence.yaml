@@ -1,4 +1,4 @@
-_target_: chunkgfn.datamodules.selfies_sequence.SELFIESSequenceModule
+_target_: chunkgfn.environment.selfies_sequence.SELFIESSequenceModule
 
 max_len: 32
 num_train_iterations: 100

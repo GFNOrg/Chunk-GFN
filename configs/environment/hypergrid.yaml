@@ -1,4 +1,4 @@
-_target_: chunkgfn.datamodules.hypergrid.HyperGridModule
+_target_: chunkgfn.environment.hypergrid.HyperGridModule
 
 ndim: 4
 side_length: 16

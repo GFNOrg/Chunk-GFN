@@ -1,25 +1,24 @@
-import numpy as np
-import torch
 import gzip
-from Bio import SeqIO
-from pathlib import Path
 import os
 import random
-
-from polyleven import levenshtein
-import marisa_trie
-
 from collections import defaultdict
 from itertools import combinations
+from pathlib import Path
 
-from chunkgfn.datamodules.base_sequence import BaseSequenceModule
+import marisa_trie
+import numpy as np
+import torch
+from Bio import SeqIO
+from polyleven import levenshtein
+
+from chunkgfn.environment.base_sequence import BaseSequenceModule
 
 
 def find_closest_match(query, trie, max_cost=2):
     # Start by finding candidates that share at least a part of the prefix
     # We generate prefixes of the query to a certain reasonable length
     candidates = set()
-    for i in range(1, min(len(query), max_cost+1) + 1):
+    for i in range(1, min(len(query), max_cost + 1) + 1):
         prefix = query[:i]
         for word in trie.keys(prefix):
             candidates.add(word)
@@ -30,7 +29,7 @@ def find_closest_match(query, trie, max_cost=2):
 
     # Compute edit distances between the query and each candidate
     closest_match = None
-    min_distance = float('inf')
+    min_distance = float("inf")
     for candidate in candidates:
         distance = levenshtein(query, candidate)
         if distance < min_distance:
@@ -58,7 +57,7 @@ def find_closest_match(query, trie, max_cost=2):
 
 
 def open_fasta(filename):
-    with gzip.open(filename, 'rt') as file:
+    with gzip.open(filename, "rt") as file:
         # Using SeqIO from Biopython to parse the FASTA formatted data
         dataset = {}
         for record in SeqIO.parse(file, "fasta"):
@@ -80,6 +79,7 @@ class CCDSSequenceModule(BaseSequenceModule):
     from the CCDS dataset. Uses the protein coding sequences as the environment modes
     and uses edit distance to the closest CDS a reward.
     """
+
     def __init__(
         self,
         max_len: int,
@@ -133,15 +133,15 @@ class CCDSSequenceModule(BaseSequenceModule):
         if max_len is None:
             self.examples = list(self.dset.keys())
         else:
-           self.examples = [x[:max_len] for x in list(self.dset.keys())]
+            self.examples = [x[:max_len] for x in list(self.dset.keys())]
         self.max_example_len = max([len(x) for x in self.examples])
 
         # Trie is used for fast distance search.
         self.trie = marisa_trie.Trie(self.examples)
 
         # Create the training modes and the "known" (held out) sequences.
-        self.modes = self.examples[:self.num_modes]
-        self.known_sequences = self.examples[-self.n_held_out:]
+        self.modes = self.examples[: self.num_modes]
+        self.known_sequences = self.examples[-self.n_held_out :]
         self.len_modes = torch.tensor([len(m) for m in self.modes])
 
         super().__init__(
@@ -197,7 +197,7 @@ class CCDSSequenceModule(BaseSequenceModule):
 
         # Find the modes that are close to the samples, and save them.
         modes_found = []
-        for (seq, r) in zip(seqs, reward):
+        for seq, r in zip(seqs, reward):
             if r > self.threshold:
                 modes_found.append(seq)
 
@@ -226,8 +226,10 @@ class CCDSSequenceModule(BaseSequenceModule):
             )
             s_tensor = torch.zeros(s_idx.shape[0], len(self.atomic_tokens))
             s_tensor[torch.arange(s_idx.shape[0]), s_idx] = 1
-            seq = torch.full((self.max_len + 1, s_tensor.shape[1]), -1, dtype=torch.float)
-            seq[:len(s_tensor)] = s_tensor
+            seq = torch.full(
+                (self.max_len + 1, s_tensor.shape[1]), -1, dtype=torch.float
+            )
+            seq[: len(s_tensor)] = s_tensor
             test_seq.append(seq)
 
         test_seq = torch.stack(test_seq, dim=0)
@@ -237,13 +239,10 @@ class CCDSSequenceModule(BaseSequenceModule):
 
 
 if __name__ == "__main__":
-
-
     from datetime import datetime
 
     truncate = [None, 1000, 100]
     for t in truncate:
-
         dset = CCDSSequenceModule(
             max_len=t,
             num_train_iterations=100,
@@ -258,9 +257,13 @@ if __name__ == "__main__":
 
         for example_idx in [0, -1]:
             now = datetime.now()
-            score = find_closest_match(dset.examples[example_idx], trie, max_cost=1000)[1]
+            score = find_closest_match(dset.examples[example_idx], trie, max_cost=1000)[
+                1
+            ]
             end = datetime.now()
             time_taken = end - now
-            print("truncate={}, time={}, idx={}, score={}".format(
-                t, time_taken, example_idx, score))
-
+            print(
+                "truncate={}, time={}, idx={}, score={}".format(
+                    t, time_taken, example_idx, score
+                )
+            )

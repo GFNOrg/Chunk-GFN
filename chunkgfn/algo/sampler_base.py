@@ -8,7 +8,7 @@ from torch.distributions import Categorical
 from torchmetrics import MeanMetric
 
 from chunkgfn.algo.utils import has_trainable_parameters
-from chunkgfn.datamodules.base_module import BaseUnConditionalEnvironmentModule
+from chunkgfn.environment.base_module import BaseUnConditionalEnvironmentModule
 from chunkgfn.replay_buffer.base_replay_buffer import ReplayBuffer
 from chunkgfn.replay_buffer.utils import extend_trajectories
 from chunkgfn.schedulers import Scheduler

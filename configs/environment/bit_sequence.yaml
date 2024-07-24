@@ -1,4 +1,4 @@
-_target_: chunkgfn.datamodules.bit_sequence.BitSequenceModule
+_target_: chunkgfn.environment.bit_sequence.BitSequenceModule
 
 max_len: 32
 num_train_iterations: 100
