@@ -1,8 +1,9 @@
 import torch
-from torch import nn
+
+from .base_policy import BasePolicy
 
 
-class UniformPolicy(nn.Module):
+class UniformPolicy(BasePolicy):
     def __init__(self, action_embedding_dim: int):
         super().__init__()
         self.action_embedding_dim = action_embedding_dim

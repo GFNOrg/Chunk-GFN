@@ -56,7 +56,8 @@ class BaseSampler(ABC, LightningModule):
     def setup(self, stage):
         self.env: BaseUnConditionalEnvironmentModule = self.trainer.datamodule
         # Attach environment to policies
-        self.forward_policy.set_environment(self.env)
+        if self.forward_policy is not None:
+            self.forward_policy.set_environment(self.env)
 
     def configure_optimizers(self):
         params = []
