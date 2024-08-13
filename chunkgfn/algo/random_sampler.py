@@ -59,7 +59,7 @@ class RandomSampler(BaseSampler):
     def validation_step(self, val_batch, batch_idx) -> Any:
         final_state, _ = val_batch
         _, _, _, _, final_state, logreward, _ = self.sample(
-            final_state,
+            final_state, train=False, epsilon=None, temperature=None
         )
 
         self.val_logreward(logreward.mean())

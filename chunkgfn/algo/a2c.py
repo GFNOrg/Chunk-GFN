@@ -131,9 +131,7 @@ class A2C(BaseSampler):
     def validation_step(self, val_batch, batch_idx) -> Any:
         final_state, logreward = val_batch
         x, trajectories, actions, dones, final_state, logreward, trajectory_length = (
-            self.sample(
-                final_state,
-            )
+            self.sample(final_state, train=False, epsilon=None, temperature=None)
         )
         loss = self.compute_loss(trajectories, actions, dones, logreward)
 
