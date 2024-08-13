@@ -42,5 +42,5 @@ n_onpolicy_samples: 512 # Number of on-policy samples to draw for each validatio
 replay_refactor: backward 
 chunk_algorithm: null
 
-initial_loss_threshold: 0.8
+initial_loss_threshold: 1
 loss_multiplier: 0.75
