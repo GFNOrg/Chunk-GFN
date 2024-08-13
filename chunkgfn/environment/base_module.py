@@ -303,7 +303,7 @@ class BaseUnConditionalEnvironmentModule(LightningDataModule, ABC):
         self.actions = _actions + tokens
         self.action_len = torch.cat(
             [self.action_len, torch.tensor([len(x) for x in tokens])], dim=0
-        )
+        ).long()
         # Reset the action frequency.
         self.action_frequency = torch.cat(
             [self.action_frequency * 0, torch.zeros(len(tokens))], dim=0
@@ -317,7 +317,7 @@ class BaseUnConditionalEnvironmentModule(LightningDataModule, ABC):
             self.actions = _actions[:idx] + _actions[idx + 1 :]
             self.action_len = torch.cat(
                 [self.action_len[:idx], self.action_len[idx + 1 :]], dim=0
-            )
+            ).long()
             self.action_frequency = torch.cat(
                 [self.action_frequency[:idx], self.action_frequency[idx + 1 :]], dim=0
             )

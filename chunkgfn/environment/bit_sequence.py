@@ -19,6 +19,7 @@ class BitSequenceModule(BaseSequenceModule):
         num_train_iterations: int,
         threshold: float,
         batch_size: int = 64,
+        atomic_tokens: list[str] = ["0", "1"],
         sample_exact_length: bool = False,
         num_workers: int = 0,
         pin_memory: bool = False,
