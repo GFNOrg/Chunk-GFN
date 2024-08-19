@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 
-import numpy as np
 import torch
 from polyleven import levenshtein
 
@@ -47,6 +46,9 @@ class BitSequenceModule(BaseSequenceModule):
         self.threshold = threshold
         self.modes_path = os.path.join(
             Path(__file__).parent.parent.parent, f"modes_{self.max_len}.txt"
+        )
+        self.dataset_path = os.path.join(
+            Path(__file__).parent.parent.parent, f"modes_{self.max_len}_dataset.txt"
         )
 
         self.create_modes()
@@ -112,30 +114,18 @@ class BitSequenceModule(BaseSequenceModule):
             test_seq (list[str]): List of test sequences.
             test_rs (list[float]): List of test logrewards.
         """
+        with open(self.dataset_path, "r") as f:
+            dataset = f.read().splitlines()
+
         test_seq = []
-        vocab = ["0", "1"]
-
-        def noise_seq(x, n):
-            x = list(x)
-            idces = list(range(len(x)))
-            for i in range(n):
-                j = idces.pop(np.random.randint(len(idces)))
-                r = x[j]
-                while r == x[j]:
-                    r = vocab[np.random.randint(len(vocab))]
-                x[j] = r
-            return "".join(x)
-
-        for m in self.modes:
-            for n in range(1, len(m) + 1):
-                s = noise_seq(m, n)
-                s_idx = torch.tensor(
-                    [self.atomic_tokens.index(char) for char in s]
-                    + [self.atomic_tokens.index(self.exit_action)]
-                )
-                s_tensor = torch.zeros(s_idx.shape[0], len(self.atomic_tokens))
-                s_tensor[torch.arange(s_idx.shape[0]), s_idx] = 1
-                test_seq.append(s_tensor)
+        for string in dataset:
+            s_idx = torch.tensor(
+                [self.atomic_tokens.index(char) for char in string]
+                + [self.atomic_tokens.index(self.exit_action)]
+            )
+            s_tensor = torch.zeros(s_idx.shape[0], len(self.atomic_tokens))
+            s_tensor[torch.arange(s_idx.shape[0]), s_idx] = 1
+            test_seq.append(s_tensor)
         test_seq = torch.stack(test_seq, dim=0)
         test_rs = self.compute_logreward(test_seq)
         return test_seq, test_rs
