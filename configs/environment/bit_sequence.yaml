@@ -1,13 +1,13 @@
 _target_: chunkgfn.environment.bit_sequence.BitSequenceModule
 
-max_len: 32
+max_len: 64
 num_train_iterations: 100
 sample_exact_length: True # Whether to always sample sequences of length `max_len` or not
-threshold: 8 # Threshold leveinstein distance for mode discovery
+threshold: 10 # Threshold leveinstein distance for mode discovery
 output_padding_mask: False
-batch_size: 32
+batch_size: 64
 num_workers: 0
 pin_memory: True
 persistent_workers: False
 atomic_tokens: ["0", "1"]
-actions: null # Pass a custom actions list, DO NOT PUT IT THE EXIT ACTION!!!
+actions: null # Pass a custom actions list, DO NOT PUT IN THE EXIT ACTION!!!
