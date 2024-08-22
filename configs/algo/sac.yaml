@@ -37,3 +37,5 @@ n_onpolicy_samples: 512 # Number of on-policy samples to draw for each validatio
 entropy_coefficient: 0.1
 
 chunk_algorithm: null
+
+max_chunk_size: 32
