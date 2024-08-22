@@ -22,32 +22,25 @@ trainer:
 
 algo:
   forward_policy:
-    _target_: chunkgfn.models.transformer.Transformer
-    num_layers: 4
+    _target_: chunkgfn.models.rnn.UnconditionalRNN
+    num_layers: 1
     hidden_dim: 128
     state_dim: 3
-    max_len: ${environment.max_len}
-    num_head: 8
-    output_dim: ${algo.action_embedder.action_embedding_dimension}
-    use_bos_token: True
+    action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
+    act:
+      _target_: torch.nn.ReLU
   
   critic:
-    _target_: chunkgfn.models.transformer.Transformer
-    num_layers: 4
+    _target_: chunkgfn.models.rnn.Critic
+    num_layers: 1
     hidden_dim: 128
     state_dim: 3
-    max_len: ${environment.max_len}
-    num_head: 8
-    output_dim: 1
-    use_bos_token: True
+    act:
+      _target_: torch.nn.ReLU
   
   action_embedder:
-    _target_: chunkgfn.models.action_encoder.ActionEncoder
+    _target_: chunkgfn.models.action_encoder.ActionModel
     n_primitive_actions: 3
-    num_layers: 4
-    hidden_dim: 128
-    max_len: ${environment.max_len}
-    num_head: 8
   
   chunk_algorithm: bpe
   chunk_type: basic

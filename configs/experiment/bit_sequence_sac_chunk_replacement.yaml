@@ -13,9 +13,8 @@ defaults:
 
 seed: 42
 
-
 environment:
-  output_padding_mask: False
+  output_padding_mask: True
 
 trainer:
   max_epochs: 250
@@ -50,6 +49,12 @@ algo:
     _target_: chunkgfn.models.action_encoder.ActionModel
     n_primitive_actions: 3
   
+  chunk_algorithm: bpe
+  chunk_type: replacement
+  total_library_size: 28
+  library_update_frequency: 10
+  n_samples: 10000
+
 logger:
   wandb:
     group: "bit_sequence"

@@ -14,7 +14,7 @@ defaults:
 seed: 42
 
 environment:
-  output_padding_mask: True
+  output_padding_mask: False
 
 trainer:
   max_epochs: 250
