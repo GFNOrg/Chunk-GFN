@@ -1,7 +1,6 @@
 from copy import deepcopy
 from typing import Any
 
-import numpy as np
 import torch
 from einops import rearrange
 from torch import nn
@@ -151,7 +150,7 @@ class SAC(BaseSampler):
         ) / (dim**0.5)  # Same as in softmax
         return q_values_1, q_values_2
 
-    def compute_loss(self, trajectories, actions, dones, logreward):
+    def _compute_loss(self, trajectories, actions, dones, logreward):
         """Compute the loss for the model.
         Args:
             trajectories (torch.Tensor[batch_size, trajectory_length, *state_shape]): Trajectories for each sample in the batch.
@@ -244,6 +243,54 @@ class SAC(BaseSampler):
         loss = q_loss + policy_loss
 
         return loss, q_loss, policy_loss
+
+    def compute_loss(self, trajectories, actions, dones, logreward):
+        """Compute the loss for the model with chunking to avoid OOM errors.
+        Args:
+            trajectories (torch.Tensor[batch_size, trajectory_length, *state_shape]): Trajectories for each sample in the batch.
+            actions (torch.Tensor[batch_size, trajectory_length]): Actions for each sample in the batch.
+            dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
+            logreward (torch.Tensor[batch_size]): Log reward.
+        Returns:
+            loss (torch.Tensor[1]): Total loss.
+            q_loss (torch.Tensor[1]): Q-value loss.
+            policy_loss (torch.Tensor[1]): Policy loss.
+        """
+        # Estimate the maximum chunk size
+        max_chunk_size = self.hparams.max_chunk_size
+        bs = trajectories.shape[0]
+        num_chunks = (
+            bs + max_chunk_size - 1
+        ) // max_chunk_size  # Calculate number of chunks
+
+        total_loss, total_q_loss, total_policy_loss = 0.0, 0.0, 0.0
+
+        for i in range(num_chunks):
+            start_idx = i * max_chunk_size
+            end_idx = min(start_idx + max_chunk_size, bs)
+
+            # Extract the chunk
+            trajectories_chunk = trajectories[start_idx:end_idx]
+            actions_chunk = actions[start_idx:end_idx]
+            dones_chunk = dones[start_idx:end_idx]
+            logreward_chunk = logreward[start_idx:end_idx]
+
+            # Compute loss for the chunk
+            loss, q_loss, policy_loss = self._compute_loss(
+                trajectories_chunk, actions_chunk, dones_chunk, logreward_chunk
+            )
+
+            # Aggregate losses
+            total_loss += loss * (end_idx - start_idx)
+            total_q_loss += q_loss * (end_idx - start_idx)
+            total_policy_loss += policy_loss * (end_idx - start_idx)
+
+        # Average the losses across all chunks
+        total_loss /= bs
+        total_q_loss /= bs
+        total_policy_loss /= bs
+
+        return total_loss, total_q_loss, total_policy_loss
 
     def training_step(self, train_batch, batch_idx) -> Any:
         loss, q_loss, policy_loss = super().training_step(train_batch, batch_idx)
