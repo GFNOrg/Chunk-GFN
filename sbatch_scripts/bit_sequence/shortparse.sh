@@ -1,12 +1,11 @@
 maxlen_cutoff=(
-#    "64,12,64,10,0.01"
-    "128,25,64,20,0.005"
+#    "64,12,64,10,0.01,112"
+    "128,25,64,20,0.005,226"
 )
 
 experiments=(
-#    "bit_sequence_a2c"
-    "bit_sequence_a2c_chunk"
-    "bit_sequence_a2c_chunk_replacement"
+    "bit_sequence_compressor_chunk"
+    "bit_sequence_compressor_chunk_replacement"
 )
 
 for seed in 1998 2024 42
@@ -25,8 +24,10 @@ do
             batch_size=$((batch_size))
             threshold="${fields[3]}"
             threshold=$((threshold))
-            entropy_coeff="${fields[4]}"
-            entropy_coeff=$(echo "$entropy_coeff" | bc)
+            temperatue="${fields[4]}"
+            temperatue=$(echo "$temperatue" | bc)
+            partition="${fields[5]}"
+            partition=$((partition))
 
             sbatch sbatch_scripts/bit_sequence/bit_sequence.sh \
             experiment=${exp} \
@@ -35,10 +36,14 @@ do
             environment.max_len=${length} \
             environment.threshold=${threshold} \
             environment.batch_size=${batch_size} \
+            algo.reward_temperature=${temperatue} \
+            algo.replay_buffer.cutoff_distance=${cutoff} \
+            algo.partition_init=${partition} \
+            algo.replay_refactor=backward \
+            algo.backward_policy.alpha=-5 \
             environment.output_padding_mask=False \
-            algo.entropy_coeff=${entropy_coeff} \
             logger.wandb.name=${exp}_${length}_bpe \
-            logger.wandb.group=bit_sequence        
+            logger.wandb.group=bit_sequence
         done
     done
 done
