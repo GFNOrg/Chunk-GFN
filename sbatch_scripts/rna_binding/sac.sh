@@ -1,12 +1,13 @@
 tasks_cutoff=(
-    "L14_RNA1,3,11,0.1,0.9,1",
-    "L50_RNA1,10,22,0.0133333,0.9,5",
-    "L100_RNA1,20,5,0.005,0.85,50"
+    "L14_RNA1,3,0.9,0.1",
+    "L50_RNA1,10,0.9,0.025",
+    "L100_RNA1,20,0.85,0.0025"
 )
 
 algorithms=(
-    "rna_compressor_chunk"
-    "rna_compressor_chunk_replacement"
+    "rna_sac"
+    "rna_sac_chunk"
+    "rna_sac_chunk_replacement"
 )
 
 modes_path="${HOME}/Chunk-GFN/L14_RNA1_modes.pickle"
@@ -22,20 +23,15 @@ do
             task="${fields[0]}"
             cutoff="${fields[1]}"
             cutoff=$((cutoff))
-            partition_init="${fields[2]}"
-            partition_init=$((partition_init))
-            temperature="${fields[3]}"
-            temperatue=$(echo "$temperature" | bc)
-            threshold="${fields[4]}"
+            threshold="${fields[2]}"
             threshold=$(echo "$threshold" | bc)
-            loss_threshold="${fields[5]}"
-            loss_threshold=$((loss_threshold))
-            
+
             if [[ "$task" == "L14_RNA1" ]]; then
                 dataset_path="${HOME}/Chunk-GFN/L14_RNA1_dataset.pickle"
             else
                 dataset_path=null
             fi
+
             sbatch sbatch_scripts/rna_binding/rna_binding.sh \
             experiment=${algo} \
             task_name=rna_binding \
@@ -46,13 +42,9 @@ do
             environment.dataset_path=${dataset_path} \
             environment.high_reward_threshold=${threshold} \
             algo.replay_buffer.cutoff_distance=${cutoff} \
-            algo.reward_temperature=${temperature} \
-            algo.partition_init=${partition_init} \
-            algo.backward_policy.alpha=0 \
-            algo.initial_loss_threshold=${loss_threshold} \
-            logger.wandb.name=${algo}_${task}_bpe \
+            logger.wandb.name=${algo}_${task} \
             logger.wandb.group=rna_binding
-        
+           
         done
     done
 done
