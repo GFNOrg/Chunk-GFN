@@ -1,7 +1,9 @@
 from torch import nn
 
+from .base_policy import BasePolicy
 
-class MLP(nn.Module):
+
+class MLP(BasePolicy):
     def __init__(
         self, num_layers, hidden_dim, in_dim, activation, action_embedding_dim
     ):
