@@ -50,6 +50,7 @@ class BitSequenceModule(BaseSequenceModule):
         self.dataset_path = os.path.join(
             Path(__file__).parent.parent.parent, f"modes_{self.max_len}_dataset.txt"
         )
+        self.chunks = ["00000000", "11111111", "11110000", "00001111", "00111100"]
 
         self.create_modes()
 
@@ -65,6 +66,38 @@ class BitSequenceModule(BaseSequenceModule):
         self.modes = list(self.modes)
         self.len_modes = torch.tensor([len(m) for m in self.modes])
 
+    def shortest_parse(self, vocabulary, string):
+        """Compute the shortest parse of a given string using the vocabulary tokens.
+
+        This function finds the minimum number of tokens required to completely parse
+        the input `string` using tokens from the vocabulary. It returns
+        both the minimum number of tokens and the sequence of tokens that achieves
+        this minimum.
+
+        Args:
+            string (str): The input string to be parsed.
+
+        Returns:
+            tuple:
+                - int: The minimum number of tokens required to parse the input string.
+                - list of str: The sequence of tokens that forms the shortest parse of the input string.
+        """
+        min_parses = {string[:i]: float("inf") for i in range(len(string) + 1)}
+        min_parses[""] = 0
+        best_tokens = {"": []}
+        for ln in range(1, len(string) + 1):
+            s = string[:ln]
+            candidates = []
+            for token in vocabulary:
+                c = len(token)
+                if s[-c:] == token:
+                    candidates.append((token, s[:-c]))
+
+            best_token, best_candidate = min(candidates, key=lambda x: min_parses[x[1]])
+            best_tokens[s] = best_tokens[s[: -len(best_token)]] + [best_token]
+            min_parses[s] = 1 + min_parses[best_candidate]
+        return min_parses[string], best_tokens[string]
+
     def compute_logreward(self, states: torch.Tensor) -> torch.Tensor:
         """Compute the reward for the given states and action.
         Args:
@@ -72,14 +105,24 @@ class BitSequenceModule(BaseSequenceModule):
         Returns:
             reward (torch.Tensor[batch_size]): Batch of rewards.
         """
-        strings = [
-            s.replace(self.exit_action, "") for s in self.to_strings(states)
-        ]  # remove <EOS> tokens for computing reward
+        rewards = []
+        parse_vocabulary = self.chunks + [
+            a for a in self.atomic_tokens if a != self.exit_action
+        ]
+        max_chunks_number = self.max_len // min([len(chunk) for chunk in self.chunks])
+        for s in self.to_strings(states):
+            string = s.replace(
+                self.exit_action, ""
+            )  # remove <EOS> tokens for computing reward
+            _, best_tokens = self.shortest_parse(parse_vocabulary, string)
+            reward = sum([(token in self.chunks) for token in best_tokens])
+            reward /= max_chunks_number
+            rewards.append(reward)
 
-        dists = torch.tensor([[levenshtein(s, i) for i in self.modes] for s in strings])
-        values, indices = torch.min(dists, dim=-1)
-        reward = 1 - values / self.len_modes[indices]
-        return reward
+        rewards = torch.tensor(rewards)
+        rewards = rewards.clamp_min(min=1e-4)
+        logrewards = rewards.log()
+        return logrewards
 
     def compute_metrics(
         self, states: torch.Tensor, logrewards: torch.Tensor
