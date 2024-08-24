@@ -21,7 +21,7 @@ class PrioritizedReplay(ReplayBuffer):
         self,
         cutoff_distance: float,
         capacity: int = 1000,
-        is_conditional: bool = True,
+        is_conditional: bool = False,
         **kwargs,
     ):
         super().__init__(capacity, is_conditional, **kwargs)
