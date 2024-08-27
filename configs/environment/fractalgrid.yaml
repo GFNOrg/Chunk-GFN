@@ -1,0 +1,11 @@
+_target_: chunkgfn.environment.fractalgrid.FractalGridModule
+
+side_length: 65
+R0: 0.1
+R1: 0.5
+R2: 2
+num_train_iterations: 125
+batch_size: 64
+num_workers: 0  # For OSX.
+pin_memory: True
+persistent_workers: False
