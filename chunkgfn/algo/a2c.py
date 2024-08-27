@@ -155,6 +155,7 @@ class A2C(BaseSampler):
             train=False,
             epsilon=None,
             temperature=None,
+            calculate_logreward=False,
         )
         torch.save(
             {

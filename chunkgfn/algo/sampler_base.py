@@ -387,14 +387,17 @@ class BaseSampler(ABC, LightningModule):
         train: bool = True,
         epsilon: float = 0.0,
         temperature: float = 0.0,
+        calculate_logreward: bool = True,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = batch
 
         trajectories, actions, dones, final_state, trajectory_length = self.forward(
             x.shape[0], train=train, epsilon=epsilon, temperature=temperature
         )
-
-        logreward = self.env.compute_logreward(final_state).to(final_state.device)
+        if calculate_logreward:
+            logreward = self.env.compute_logreward(final_state).to(final_state.device)
+        else:
+            logreward = None
         return (
             x,
             trajectories,
