@@ -22,9 +22,9 @@ trainer:
 algo:
   replay_buffer:
     _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
+    cutoff_distance: 1
     capacity: 1000
     is_conditional: False
-    cutoff_distance: 3
   
   chunk_algorithm: bpe
   chunk_type: replacement

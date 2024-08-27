@@ -34,12 +34,17 @@ algo:
   
   replay_buffer:
     _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
-    cutoff_distance: 3
-    capacity: 10000
+    cutoff_distance: 1
+    capacity: 1000
 
   backward_policy:
     _target_: chunkgfn.models.uniform_policy.UniformPolicy
     action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
+  
+  epsilon_scheduler:
+    _target_: chunkgfn.schedulers.linear_schedule.LinearSchedule
+    initial_value: 0.5
+    final_value: 0.1
   
   n_trajectories: 5
 

@@ -5,7 +5,7 @@
 
 defaults:
   - override /environment: fractalgrid.yaml
-  - override /algo: tb_gfn.yaml
+  - override /algo: a2c.yaml
   - override /trainer: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
@@ -32,27 +32,20 @@ algo:
     _target_: chunkgfn.models.action_encoder.ActionModel
     n_primitive_actions: 3
   
-  replay_buffer:
-    _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
-    cutoff_distance: 1
-    capacity: 1000
-
-  backward_policy:
-    _target_: chunkgfn.models.uniform_policy.UniformPolicy
-    action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
-  
-  epsilon_scheduler:
-    _target_: chunkgfn.schedulers.linear_schedule.LinearSchedule
-    initial_value: 0.5
-    final_value: 0.1
+  critic:
+    _target_: chunkgfn.models.mlp.Critic
+    num_layers: 1
+    hidden_dim: 128
+    in_dim: 195
+    activation:
+      _target_: torch.nn.ReLU
   
   chunk_algorithm: bpe
-  chunk_type: basic
-  n_chunks: 1
+  chunk_type: replacement
+  total_library_size: 28
   library_update_frequency: 10
   n_samples: 1500
-  n_trajectories: 5
-
+  
 logger:
   wandb:
     group: "fractalgrid"

@@ -42,7 +42,7 @@ algo:
   
   replay_buffer:
     _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
-    cutoff_distance: 3
+    cutoff_distance: 1
     capacity: 1000
   
   chunk_algorithm: bpe
