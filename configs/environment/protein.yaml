@@ -1,0 +1,16 @@
+_target_: chunkgfn.environment.protein.ProteinModule
+
+num_train_iterations: 100
+batch_size: 64
+num_workers: 3
+pin_memory: True
+persistent_workers: False
+max_len: 30
+output_padding_mask: False
+atomic_tokens: ['L', 'A', 'G', 'V', 'S', 'E', 'R', 'T', 'I', 'D', 'P', 'K', 'Q', 'N', 'F', 'Y', 'M', 'H', 'W']
+actions: null # Pass a custom actions list, DO NOT PUT IT THE EXIT ACTION!!!
+high_reward_threshold: null
+# ESM hyperparams
+language_model_energy_term_weight: 1
+ngram_energy_term_weight: 0.5
+ngram_orders: [1,2,3]

@@ -1,0 +1,8 @@
+_target_: chunkgfn.environment.graph.GraphGenerationModule
+
+max_nodes: 10
+num_train_iterations: 100
+batch_size: 64
+num_workers: 0  # For OSX.
+pin_memory: True
+persistent_workers: False
