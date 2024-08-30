@@ -456,6 +456,7 @@ class TBGFN(BaseSampler):
             train=False,
             epsilon=None,
             temperature=None,
+            calculate_logreward=False,
         )
         torch.save(
             {
