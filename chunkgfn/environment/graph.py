@@ -175,23 +175,25 @@ class GraphGenerationModule(BaseUnConditionalEnvironmentModule):
         # Multi-node graphs
         if is_multi_node.any():
             multi_node_indices = torch.where(is_multi_node)[0]
-            for i in multi_node_indices:
-                last_node_connected = (state[i, last_node_idx[i], :last_node_idx[i]] == 1).any()
-                
-                if not last_node_connected:
-                    # If last node is not connected, force edge creation
-                    mask[i, 2:2+last_node_idx[i]] = True
-                else:
-                    # If last node is connected, allow stopping, adding node, or adding edge to farther nodes
-                    mask[i, :2] = True  # Allow stopping and adding node
-                    
-                    # Find the farthest connected node
-                    farthest_connected = (state[i, last_node_idx[i], :last_node_idx[i]] == 1).nonzero(as_tuple=True)[0].min()
-                    relative_to_last_node = last_node_idx[i] - farthest_connected # This computes the E-i
-                    
-                    # Allow adding edges only to nodes farther than the farthest connected node
-                    if farthest_connected > 0:
-                        mask[i, 2+relative_to_last_node:2+last_node_idx[i]] = True
+            last_node_connected = (state[multi_node_indices, last_node_idx[multi_node_indices]] == 1).any(dim=-1)
+            
+            arange = torch.arange(state.size(1) - 2, device=state.device).unsqueeze(0)
+            # Handle not connected case
+            not_connected_mask = ~last_node_connected
+            mask[multi_node_indices[not_connected_mask], 2:] = arange < last_node_idx[multi_node_indices[not_connected_mask]].unsqueeze(1)
+            
+            # Handle connected case
+            connected_mask = last_node_connected
+            farthest_connected = torch.argmax((state[multi_node_indices[connected_mask], last_node_idx[multi_node_indices[connected_mask]]] == 1).float(), dim=-1)
+            relative_to_last_node = last_node_idx[multi_node_indices[connected_mask]] - farthest_connected
+            
+            # Create a mask for nodes farther than the farthest connected node
+            farther_nodes_mask = arange >= relative_to_last_node.unsqueeze(1)
+            farther_nodes_mask &= arange < last_node_idx[multi_node_indices[connected_mask]].unsqueeze(1)
+        
+            # Apply the mask
+            mask[multi_node_indices[connected_mask], 2:] = farther_nodes_mask
+            mask[multi_node_indices[connected_mask], :2] = True # Allow stopping and adding node
         
         # Ensure we can only add a node if we haven't reached MAX_NODES
         mask[:, 1] &= (last_node_idx < self.max_nodes - 1)
@@ -216,17 +218,20 @@ class GraphGenerationModule(BaseUnConditionalEnvironmentModule):
         # Multi-node graphs
         if is_multi_node.any():
             multi_node_indices = torch.where(is_multi_node)[0]
-            for i in multi_node_indices:
-                last_node_connected = (state[i, last_node_idx[i], :last_node_idx[i]] == 1).any()
-                
-                if not last_node_connected:
-                    # If last node is not connected, only allow removing the node
-                    mask[i, 1] = True
-                else:
-                    # If last node is connected, allow undoing the most recently added edge
-                    farthest_connected = (state[i, last_node_idx[i], :last_node_idx[i]] == 1).nonzero(as_tuple=True)[0].min()
-                    relative_to_last_node = last_node_idx[i] - farthest_connected
-                    mask[i, 1+relative_to_last_node] = True
+            last_node_connected = (state[multi_node_indices, last_node_idx[multi_node_indices]] == 1).any(dim=-1)
+            
+            arange = torch.arange(state.size(1) - 2, device=state.device).unsqueeze(0)
+            # Handle not connected case
+            not_connected_mask = ~last_node_connected
+            mask[multi_node_indices[not_connected_mask], 1] = True
+            
+            # Handle connected case
+            connected_mask = last_node_connected
+            farthest_connected = torch.argmax((state[multi_node_indices[connected_mask], last_node_idx[multi_node_indices[connected_mask]]] == 1).float(), dim=-1)
+            relative_to_last_node = last_node_idx[multi_node_indices[connected_mask]] - farthest_connected
+            
+            # Apply the mask
+            mask[multi_node_indices[connected_mask], 1+relative_to_last_node] = True
         
         return mask
 
