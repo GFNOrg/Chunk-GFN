@@ -1,10 +1,11 @@
 maxlen_cutoff=(
-#    "64,12,64,10,0.01,112"
-    "128,25,64,20,0.005,226"
+    "64,8,64,8,0.01,40"
+    "128,16,64,16,0.005,30"
 )
 
+
 experiments=(
-#    "bit_sequence_tbgfn"
+    "bit_sequence_tbgfn"
     "bit_sequence_tbgfn_chunk"
     "bit_sequence_tbgfn_chunk_replacement"
 )
@@ -43,7 +44,8 @@ do
             algo.replay_refactor=backward \
             environment.output_padding_mask=False \
             logger.wandb.name=${exp}_${length}_bpe \
-            logger.wandb.group=bit_sequence
+            logger.wandb.group=bit_sequence \
+            logger=wandb_offline
         done
     done
 done

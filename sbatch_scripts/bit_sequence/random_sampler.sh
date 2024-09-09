@@ -1,6 +1,6 @@
 maxlen_cutoff=(
-    "64,12,64,10"
-    "128,25,64,20"
+    "64,8,64,8"
+    "128,16,64,16"
 )
 
 experiments=(
@@ -36,7 +36,8 @@ do
             seed=${seed} \
             algo.replay_buffer.cutoff_distance=${cutoff} \
             logger.wandb.name=${exp}_${length} \
-            logger.wandb.group=bit_sequence
+            logger.wandb.group=bit_sequence \
+            logger=wandb_offline
 
         done
     done

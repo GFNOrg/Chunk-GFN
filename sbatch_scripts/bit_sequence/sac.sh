@@ -1,6 +1,6 @@
 maxlen_cutoff=(
-    "64,12,64,10,0.01"
-    "128,25,64,20,0.005"
+    "64,8,64,8,0.01"
+    "128,16,64,16,0.005"
 )
 
 experiments=(
@@ -39,7 +39,8 @@ do
             algo.entropy_coefficient=${entropy_coeff} \
             environment.output_padding_mask=False \
             logger.wandb.name=${exp}_${length}_bpe \
-            logger.wandb.group=bit_sequence
+            logger.wandb.group=bit_sequence \
+            logger=wandb_offline
            
         done
     done

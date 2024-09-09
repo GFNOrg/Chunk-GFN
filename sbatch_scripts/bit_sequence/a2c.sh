@@ -1,10 +1,10 @@
 maxlen_cutoff=(
-#    "64,12,64,10,0.01"
-    "128,25,64,20,0.005"
+    "64,12,64,8,0.05"
+    "128,25,64,16,0.01"
 )
 
 experiments=(
-#    "bit_sequence_a2c"
+    "bit_sequence_a2c"
     "bit_sequence_a2c_chunk"
     "bit_sequence_a2c_chunk_replacement"
 )
@@ -38,7 +38,8 @@ do
             environment.output_padding_mask=False \
             algo.entropy_coeff=${entropy_coeff} \
             logger.wandb.name=${exp}_${length}_bpe \
-            logger.wandb.group=bit_sequence        
+            logger.wandb.group=bit_sequence \
+            logger=wandb_offline        
         done
     done
 done
