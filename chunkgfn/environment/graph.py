@@ -504,13 +504,7 @@ class GraphGenerationModule(BaseUnConditionalEnvironmentModule):
         Returns:
             metrics (dict[str, torch.Tensor]): Dictionary of metrics.
         """
-        graphs = self.state_to_networkx(states)
-        cycle_basis_lengths = [len(nx.cycle_basis(G)) for G in graphs]
         adj_strings = self.state_to_adj_string(states)
-        # Filter unique modes
-        
-  
-        
         self.visited.update(set(adj_strings))
         metrics = {
             "num_modes": float(len(self.discovered_modes)),
