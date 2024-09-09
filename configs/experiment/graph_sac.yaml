@@ -5,7 +5,7 @@
 
 defaults:
   - override /environment: graph.yaml
-  - override /algo: tb_gfn.yaml
+  - override /algo: sac.yaml
   - override /trainer: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
@@ -28,8 +28,14 @@ algo:
     act:
       _target_: torch.nn.ReLU
 
-  backward_policy:
-    _target_: chunkgfn.models.uniform_policy.GraphUniformPolicy
+  critic:
+    _target_: chunkgfn.models.gnn.Critic
+    num_layers: 1
+    hidden_dim: 128
+    node_dim: 1
+    global_feature_dim: 2
+    act:
+      _target_: torch.nn.ReLU
   
   action_embedder:
     _target_: chunkgfn.models.action_encoder.ActionModel
@@ -40,9 +46,6 @@ algo:
     capacity: 10000
     cutoff_distance: 10
     is_conditional: False
-  
-  reward_temperature: 1
-  partition_init: 60
 
 logger:
   wandb:

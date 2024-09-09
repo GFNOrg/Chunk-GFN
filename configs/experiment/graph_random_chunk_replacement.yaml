@@ -5,7 +5,7 @@
 
 defaults:
   - override /environment: graph.yaml
-  - override /algo: tb_gfn.yaml
+  - override /algo: random_sampler.yaml
   - override /trainer: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
@@ -18,22 +18,6 @@ trainer:
   check_val_every_n_epoch: 10
 
 algo:
-  forward_policy:
-    _target_: chunkgfn.models.gnn.GAT
-    num_layers: 1
-    hidden_dim: 128
-    node_dim: 1
-    global_feature_dim: 2
-    action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
-    act:
-      _target_: torch.nn.ReLU
-
-  backward_policy:
-    _target_: chunkgfn.models.uniform_policy.GraphUniformPolicy
-  
-  action_embedder:
-    _target_: chunkgfn.models.action_encoder.ActionModel
-    n_primitive_actions: 11
   
   replay_buffer:
     _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
@@ -41,8 +25,11 @@ algo:
     cutoff_distance: 10
     is_conditional: False
   
-  reward_temperature: 1
-  partition_init: 60
+  chunk_algorithm: bpe
+  chunk_type: replacement
+  total_library_size: 36
+  library_update_frequency: 10
+  n_samples: 10000
 
 logger:
   wandb:

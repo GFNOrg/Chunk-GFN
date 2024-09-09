@@ -38,10 +38,18 @@ algo:
   replay_buffer:
     _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
     capacity: 10000
-    cutoff_distance: 10
+    cutoff_distance: 5
     is_conditional: False
   
   reward_temperature: 1
+
+  chunk_algorithm: bpe
+  chunk_type: basic
+  n_chunks: 1
+  library_update_frequency: 10
+  n_samples: 10000
+  n_trajectories: 5
+
   partition_init: 60
 
 logger:

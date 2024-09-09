@@ -1,6 +1,7 @@
 _target_: chunkgfn.environment.graph.GraphGenerationModule
 
 max_nodes: 10
+threshold: 25
 num_train_iterations: 100
 batch_size: 64
 num_workers: 0  # For OSX.
