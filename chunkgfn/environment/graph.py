@@ -395,7 +395,6 @@ class GraphGenerationModule(BaseUnConditionalEnvironmentModule):
         action_to_be_applied = one_hot_action_tensor[action]
         bs, n_rows, n_edges = action_to_be_applied.shape
         rel2abs_idx = last_node_idx.unsqueeze(1)+torch.arange(n_rows, device=state.device).unsqueeze(0)
-        
         abs_action = self._rel2abs(action_to_be_applied[...,1:], rel2abs_idx)
 
         undo_stop = (action == 0) & ~done
@@ -420,6 +419,8 @@ class GraphGenerationModule(BaseUnConditionalEnvironmentModule):
             new_state[edgefirst_mask & action_with_node])
         # Now, whatever is left is only edge removal
         last_node_idx = self._get_last_node_index(new_state)
+        rel2abs_idx = last_node_idx.unsqueeze(1)+torch.arange(n_rows, device=state.device).unsqueeze(0)
+        abs_action = self._rel2abs(action_to_be_applied[...,1:], rel2abs_idx)
         edge_positions = abs_action[:,0].bool()
         new_state[edgefirst_mask, last_node_idx[edgefirst_mask]] = torch.where(edge_positions[edgefirst_mask], 0, new_state[edgefirst_mask, last_node_idx[edgefirst_mask]])
 
