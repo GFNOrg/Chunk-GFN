@@ -41,8 +41,8 @@ algo:
     cutoff_distance: 10
     is_conditional: False
   
-  reward_temperature: 1
-  partition_init: 60
+  reward_temperature: 0.1
+  partition_init: 10
 
 logger:
   wandb:

@@ -52,6 +52,7 @@ algo:
   library_update_frequency: 10
   n_samples: 1500
   n_trajectories: 5
+  reward_temperature: 1
 
 logger:
   wandb:

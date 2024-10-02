@@ -47,6 +47,7 @@ algo:
     final_value: 0.1
   
   n_trajectories: 5
+  reward_temperature: 1
 
 logger:
   wandb:

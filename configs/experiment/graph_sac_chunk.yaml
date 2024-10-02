@@ -29,11 +29,12 @@ algo:
       _target_: torch.nn.ReLU
 
   critic:
-    _target_: chunkgfn.models.gnn.Critic
+    _target_: chunkgfn.models.gnn.GAT
     num_layers: 1
     hidden_dim: 128
     node_dim: 1
     global_feature_dim: 2
+    action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
     act:
       _target_: torch.nn.ReLU
   

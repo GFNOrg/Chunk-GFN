@@ -41,7 +41,6 @@ algo:
     cutoff_distance: 5
     is_conditional: False
   
-  reward_temperature: 1
 
   chunk_algorithm: bpe
   chunk_type: replacement
@@ -50,7 +49,8 @@ algo:
   n_samples: 10000
   n_trajectories: 5
 
-  partition_init: 60
+  reward_temperature: 0.1
+  partition_init: 10
 
 logger:
   wandb:
