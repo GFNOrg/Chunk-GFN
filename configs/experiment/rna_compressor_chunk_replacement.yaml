@@ -5,7 +5,7 @@
 
 defaults:
   - override /environment: rna_binding.yaml
-  - override /algo: tb_gfn.yaml
+  - override /algo: tb_gfn_loss.yaml
   - override /trainer: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above

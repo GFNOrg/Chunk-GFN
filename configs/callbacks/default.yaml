@@ -13,6 +13,7 @@ model_checkpoint:
   save_last: True
   auto_insert_metric_name: False
   save_on_train_epoch_end: True
+  every_n_epochs: null
 
 early_stopping: null
 

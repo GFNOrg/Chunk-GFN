@@ -23,6 +23,7 @@ class TBGFN(BaseSampler):
         backward_policy: nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
+        logit_scaler: torch.nn.Module | None = None,
         epsilon_scheduler: Scheduler | None = None,
         temperature_scheduler: Scheduler | None = None,
         replay_buffer: ReplayBuffer | None = None,
@@ -40,6 +41,7 @@ class TBGFN(BaseSampler):
             **kwargs,
         )
         self.backward_policy = backward_policy
+        self.logit_scaler = logit_scaler
         self._logZ = nn.Parameter(
             torch.ones(self.hparams.num_partition_nodes)
             * self.hparams.partition_init
@@ -84,6 +86,15 @@ class TBGFN(BaseSampler):
                 {
                     "params": self.backward_policy.parameters(),
                     "lr": self.hparams.backward_policy_lr,
+                }
+            )
+        if self.logit_scaler is not None and has_trainable_parameters(
+            self.logit_scaler
+        ):
+            params.append(
+                {
+                    "params": self.logit_scaler.parameters(),
+                    "lr": self.hparams.logit_scaler_lr,
                 }
             )
         params.append(
@@ -135,6 +146,22 @@ class TBGFN(BaseSampler):
             logits = self.backward_policy(*processed)
         else:
             logits = self.backward_policy(processed)
+        return logits
+
+    def get_forward_logits(self, state: torch.Tensor) -> torch.Tensor:
+        """Get the forward logits for the given state.
+        Args:
+            state (torch.Tensor[batch_size, *state_shape]): State.
+        Return:
+            logits (torch.Tensor[batch_size, n_actions]): Forward logits.
+        """
+        logits = super().get_forward_logits(state)
+        if self.logit_scaler is not None:
+            temp = (
+                torch.ones((state.shape[0]), device=state.device)
+                * self.hparams.reward_temperature
+            ).float()
+            logits = logits - self.logit_scaler(temp)
         return logits
 
     @torch.no_grad()
@@ -293,52 +320,91 @@ class TBGFN(BaseSampler):
         return log_pT, trajectories, actions, dones, logreward
 
     def compute_loss(self, trajectories, actions, dones, logreward):
-        """Compute the loss for the model.
+        """Compute the loss for the model with chunking to avoid OOM errors.
         Args:
             trajectories (torch.Tensor[batch_size, trajectory_length, *state_shape]): Trajectories for each sample in the batch.
             actions (torch.Tensor[batch_size, trajectory_length]): Actions for each sample in the batch.
             dones (torch.Tensor[batch_size, trajectory_length]): Whether the trajectory is done or not.
             logreward (torch.Tensor[batch_size]): Log reward.
+            max_chunk_size (int): Maximum chunk size to process at once.
         Return:
             loss (torch.Tensor[1]): Loss.
         """
 
         bs = trajectories.shape[0]
         device = trajectories.device
-        trajectories_forward = rearrange(trajectories[:, :-1], "b t ... -> (b t) ...")
-        dones_forward = rearrange(dones[:, :-1], "b t ... -> (b t) ...")
-        actions_ = rearrange(actions, "b t ... -> (b t) ...")
+        max_chunk_size = self.hparams.max_chunk_size
+        num_chunks = (
+            bs + max_chunk_size - 1
+        ) // max_chunk_size  # Calculate number of chunks
 
-        logit_pf = self.get_forward_logits(trajectories_forward)
-        forward_mask = self.env.get_forward_mask(trajectories_forward)
-        logit_pf = torch.where(
-            forward_mask, logit_pf, torch.tensor(NEGATIVE_INFINITY, device=device)
-        )
+        total_loss = 0.0
 
-        log_pf_ = Categorical(logits=logit_pf).log_prob(actions_) * (~dones_forward + 0)
-        log_pf = rearrange(log_pf_, "(b t) ... -> b t ...", b=bs).sum(1)
+        for i in range(num_chunks):
+            # Define the chunk range
+            start_idx = i * max_chunk_size
+            end_idx = min(start_idx + max_chunk_size, bs)
 
-        trajectories_backward = rearrange(trajectories[:, 1:], "b t ... -> (b t) ...")
-        dones_backward = rearrange(dones[:, 1:], "b t ... -> (b t) ...")
+            # Extract the chunk
+            trajectories_chunk = trajectories[start_idx:end_idx]
+            actions_chunk = actions[start_idx:end_idx]
+            dones_chunk = dones[start_idx:end_idx]
+            logreward_chunk = logreward[start_idx:end_idx]
 
-        logit_pb = self.get_backward_logits(trajectories_backward)
-        backward_mask = self.env.get_backward_mask(trajectories_backward)
-        logit_pb = torch.where(
-            backward_mask, logit_pb, torch.tensor(NEGATIVE_INFINITY, device=device)
-        )
+            # Forward pass for the chunk
+            trajectories_forward = rearrange(
+                trajectories_chunk[:, :-1], "b t ... -> (b t) ..."
+            )
+            dones_forward = rearrange(dones_chunk[:, :-1], "b t ... -> (b t) ...")
+            actions_ = rearrange(actions_chunk, "b t ... -> (b t) ...")
 
-        log_pb_ = Categorical(logits=logit_pb).log_prob(actions_) * (
-            ~dones_backward + 0
-        )
-        log_pb = rearrange(log_pb_, "(b t) ... -> b t ...", b=bs).sum(1)
+            logit_pf = self.get_forward_logits(trajectories_forward)
+            forward_mask = self.env.get_forward_mask(trajectories_forward)
+            logit_pf = torch.where(
+                forward_mask, logit_pf, torch.tensor(NEGATIVE_INFINITY, device=device)
+            )
 
-        logZ = self.logZ
+            log_pf_ = Categorical(logits=logit_pf).log_prob(actions_) * (
+                ~dones_forward + 0
+            )
+            log_pf = rearrange(
+                log_pf_, "(b t) ... -> b t ...", b=logreward_chunk.size(0)
+            ).sum(1)
 
-        loss = F.mse_loss(
-            logZ + log_pf, (logreward / self.hparams.reward_temperature) + log_pb
-        )
+            # Backward pass for the chunk
+            trajectories_backward = rearrange(
+                trajectories_chunk[:, 1:], "b t ... -> (b t) ..."
+            )
+            dones_backward = rearrange(dones_chunk[:, 1:], "b t ... -> (b t) ...")
 
-        return loss
+            logit_pb = self.get_backward_logits(trajectories_backward)
+            backward_mask = self.env.get_backward_mask(trajectories_backward)
+            logit_pb = torch.where(
+                backward_mask, logit_pb, torch.tensor(NEGATIVE_INFINITY, device=device)
+            )
+
+            log_pb_ = Categorical(logits=logit_pb).log_prob(actions_) * (
+                ~dones_backward + 0
+            )
+            log_pb = rearrange(
+                log_pb_, "(b t) ... -> b t ...", b=logreward_chunk.size(0)
+            ).sum(1)
+
+            logZ = self.logZ
+
+            # Calculate loss for the chunk
+            chunk_loss = F.mse_loss(
+                logZ + log_pf,
+                (logreward_chunk / self.hparams.reward_temperature) + log_pb,
+            )
+
+            # Aggregate the loss
+            total_loss += chunk_loss * (end_idx - start_idx)
+
+        # Average the loss across all chunks
+        total_loss /= bs
+
+        return total_loss
 
     def training_step(self, train_batch, batch_idx) -> Any:
         loss = super().training_step(train_batch, batch_idx)
@@ -390,6 +456,7 @@ class TBGFN(BaseSampler):
             train=False,
             epsilon=None,
             temperature=None,
+            calculate_logreward=False,
         )
         torch.save(
             {

@@ -262,3 +262,12 @@ class RNABindingModule(BaseSequenceModule):
         test_rs = self.compute_logreward(test_seq)
 
         return test_seq, test_rs
+
+    def load_state_dict(self, state_dict):
+        super().load_state_dict(state_dict)
+        self.high_reward_strings = state_dict["high_reward_strings"]
+
+    def state_dict(self):
+        state = super().state_dict()
+        state["high_reward_strings"] = self.high_reward_strings
+        return state

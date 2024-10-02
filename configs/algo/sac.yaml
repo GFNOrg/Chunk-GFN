@@ -1,0 +1,41 @@
+_target_: chunkgfn.algo.sac.SAC
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  weight_decay: 0.0
+  eps: 1e-4
+
+scheduler: null
+
+forward_policy: null
+  
+critic: null
+
+action_embedder:
+  _target_: chunkgfn.models.action_encoder.ActionModel
+  n_primitive_actions: 3
+  hidden_dim: 128
+  action_embedding_dimension: 128
+
+epsilon_scheduler: null
+
+replay_buffer: null
+
+forward_policy_lr: 3e-4
+critic_lr: 3e-4
+action_embedder_lr: 1e-3
+entropy_lr: 3e-4
+monitor: train/logreward
+
+discount_factor: 1
+tau: 0.005
+target_network_frequency: 5 # Every x epochs
+
+ratio_from_replay_buffer: 0.55
+n_onpolicy_samples: 512 # Number of on-policy samples to draw for each validation step
+entropy_coefficient: 0.1
+
+chunk_algorithm: null
+
+max_chunk_size: 32

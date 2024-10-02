@@ -11,6 +11,8 @@ forward_policy: null
   
 backward_policy: null
 
+logit_scaler: null
+
 action_embedder:
   _target_: chunkgfn.models.action_encoder.ActionModel
   n_primitive_actions: 3
@@ -19,8 +21,8 @@ action_embedder:
 
 epsilon_scheduler:
   _target_: chunkgfn.schedulers.linear_schedule.LinearSchedule
-  initial_value: 0.5
-  final_value: 0.1
+  initial_value: 0.1
+  final_value: 0.01
   max_epochs: ${trainer.max_epochs}
 
 replay_buffer: null
@@ -41,3 +43,8 @@ reward_temperature: 0.33333 # Temperature for the reward
 n_onpolicy_samples: 512 # Number of on-policy samples to draw for each validation step
 replay_refactor: backward 
 chunk_algorithm: null
+
+initial_loss_threshold: 1
+
+# Not to be confused with chunking mechanism, this is just to ensure we don't get OOM when computing the loss
+max_chunk_size: ${environment.batch_size} 

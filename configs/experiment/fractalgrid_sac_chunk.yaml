@@ -1,0 +1,57 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+defaults:
+  - override /environment: fractalgrid.yaml
+  - override /algo: sac.yaml
+  - override /trainer: default.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+seed: 42
+
+
+trainer:
+  max_epochs: 250
+  check_val_every_n_epoch: 10
+
+algo:
+  forward_policy:
+    _target_: chunkgfn.models.mlp.MLP
+    num_layers: 1
+    hidden_dim: 128
+    in_dim: 195
+    action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
+    activation:
+      _target_: torch.nn.ReLU
+  
+  action_embedder:
+    _target_: chunkgfn.models.action_encoder.ActionModel
+    n_primitive_actions: 3
+  
+  critic:
+    _target_: chunkgfn.models.mlp.MLP
+    num_layers: 1
+    hidden_dim: 128
+    in_dim: 195
+    action_embedding_dim: ${algo.action_embedder.action_embedding_dimension}
+    activation:
+      _target_: torch.nn.ReLU
+  
+  replay_buffer:
+    _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
+    cutoff_distance: 1
+    capacity: 1000
+  
+  chunk_algorithm: bpe
+  chunk_type: basic
+  n_chunks: 1
+  library_update_frequency: 10
+  n_samples: 1500
+  
+logger:
+  wandb:
+    group: "fractalgrid"

@@ -97,7 +97,7 @@ class Critic(nn.Module):
             self.layers.append(act)
         self.layers.append(nn.LayerNorm(hidden_dim))
 
-        self.action_embedding_layer = nn.Linear(hidden_dim, 1)
+        self.q_value = nn.Linear(hidden_dim, 1)
 
     def forward(self, state):
         """
@@ -108,6 +108,6 @@ class Critic(nn.Module):
         out = s[:, -1]
         for layer in self.layers:
             out = layer(out)
-        out = self.action_embedding_layer(out)
+        out = self.q_value(out)
 
         return out

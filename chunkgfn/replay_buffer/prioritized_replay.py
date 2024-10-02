@@ -21,7 +21,7 @@ class PrioritizedReplay(ReplayBuffer):
         self,
         cutoff_distance: float,
         capacity: int = 1000,
-        is_conditional: bool = True,
+        is_conditional: bool = False,
         **kwargs,
     ):
         super().__init__(capacity, is_conditional, **kwargs)
@@ -120,7 +120,7 @@ class PrioritizedReplay(ReplayBuffer):
             _apply_idx(idx_sorted, dict_curr_batch)
 
             # Filter all batch logrewards lower than the smallest logreward in buffer.
-            idx_min_lr = dict_curr_batch["logreward"] > self.storage["logreward"].min()
+            idx_min_lr = dict_curr_batch["logreward"] >= self.storage["logreward"].min()
             _apply_idx(idx_min_lr, dict_curr_batch)
 
             # Compute all pairwise distances between the batch and the buffer.
@@ -185,6 +185,8 @@ class PrioritizedReplay(ReplayBuffer):
                 idx_to_add = idx_batch & (
                     idx_batch_far_from_buffer | idx_batch_beats_buffer
                 )
+                # Make sure that the new indices with high rewards are NOT duplicates
+                idx_to_add = idx_to_add & (batch_buffer_dist.min(-1)[0] > 0)
                 _apply_idx(idx_to_add, dict_curr_batch)
 
             # Concatenate everything, sort, and remove leftovers.

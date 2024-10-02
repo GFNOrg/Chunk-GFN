@@ -56,7 +56,8 @@ class BaseSampler(ABC, LightningModule):
     def setup(self, stage):
         self.env: BaseUnConditionalEnvironmentModule = self.trainer.datamodule
         # Attach environment to policies
-        self.forward_policy.set_environment(self.env)
+        if self.forward_policy is not None:
+            self.forward_policy.set_environment(self.env)
 
     def configure_optimizers(self):
         params = []
@@ -101,6 +102,64 @@ class BaseSampler(ABC, LightningModule):
         if self.replay_buffer is not None:
             self.replay_buffer.clear()
 
+    def chunked_forward(self, n_samples):
+        """Performs a chunked forward pass.
+        Args:
+            n_samples (int): Total number of samples to process.
+            max_chunk_size (int): Maximum chunk size to process at once.
+        Returns:
+            actions (torch.Tensor[n_samples, ...]): Actions for each sample.
+            dones (torch.Tensor[n_samples, ...]): Dones for each sample.
+            (other outputs): Other outputs from the forward pass.
+        """
+        max_chunk_size = self.hparams.max_chunk_size
+        num_chunks = (
+            n_samples + max_chunk_size - 1
+        ) // max_chunk_size  # Calculate number of chunks
+
+        trajectories = None
+        actions = None
+        dones = None
+        all_states = []
+        all_trajectory_lengths = []
+
+        for i in range(num_chunks):
+            start_idx = i * max_chunk_size
+            end_idx = min(start_idx + max_chunk_size, n_samples)
+
+            # Perform the forward pass on the chunk
+            (
+                trajectories_chunk,
+                actions_chunk,
+                dones_chunk,
+                state_chunk,
+                trajectory_length_chunk,
+            ) = self.forward(end_idx - start_idx)
+
+            if i == 0:
+                trajectories = trajectories_chunk.clone()
+                actions = actions_chunk.clone()
+                dones = dones_chunk.clone()
+            else:
+                trajectories, actions, dones = extend_trajectories(
+                    trajectories,
+                    trajectories_chunk,
+                    actions,
+                    actions_chunk,
+                    dones,
+                    dones_chunk,
+                )
+
+            all_states.append(state_chunk)
+            all_trajectory_lengths.append(trajectory_length_chunk)
+
+        # Concatenate all chunks to form the full outputs
+        states = torch.cat(all_states, dim=0)
+        trajectory_lengths = torch.cat(all_trajectory_lengths, dim=0)
+
+        return trajectories, actions, dones, states, trajectory_lengths
+
+    @torch.no_grad()
     def update_library(self):
         """Update the library. This function will do the following, in the following order:
         1. Pick a number of generated samples from the replay buffer.
@@ -133,7 +192,7 @@ class BaseSampler(ABC, LightningModule):
                 dones_rb,
             )
         else:
-            _, actions, dones, _, _ = self.forward(self.hparams.n_samples)
+            _, actions, dones, _, _ = self.chunked_forward(self.hparams.n_samples)
 
         # Get the most valuable tokens.
         if self.hparams.chunk_algorithm == "bpe":
@@ -328,14 +387,17 @@ class BaseSampler(ABC, LightningModule):
         train: bool = True,
         epsilon: float = 0.0,
         temperature: float = 0.0,
+        calculate_logreward: bool = True,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = batch
 
         trajectories, actions, dones, final_state, trajectory_length = self.forward(
             x.shape[0], train=train, epsilon=epsilon, temperature=temperature
         )
-
-        logreward = self.env.compute_logreward(final_state).to(final_state.device)
+        if calculate_logreward:
+            logreward = self.env.compute_logreward(final_state).to(final_state.device)
+        else:
+            logreward = None
         return (
             x,
             trajectories,

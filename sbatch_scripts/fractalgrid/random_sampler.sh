@@ -1,0 +1,37 @@
+hps=(
+    "65,195"
+    "129,387"
+    "257,771"
+)
+
+experiments=(
+    "fractalgrid_random_sampler"
+    "fractalgrid_random_sampler_chunk"
+    "fractalgrid_random_sampler_chunk_replacement"
+)
+
+for seed in 1998 2024 42
+do
+    for exp in "${experiments[@]}"
+    do
+        for hp in "${hps[@]}"
+        do
+            IFS=',' read -r -d '' -a fields <<< "$hp"
+
+            side_length="${fields[0]}"
+            side_length=$((side_length))
+            in_dim="${fields[1]}"
+            in_dim=$((in_dim))
+
+            sbatch sbatch_scripts/fractalgrid/fractalgrid.sh \
+            experiment=${exp} \
+            task_name=fractalgrid \
+            seed=${seed} \
+            environment.side_length=${side_length} \
+            algo.replay_buffer.cutoff_distance=1 \
+            logger.wandb.name=${exp}_${side_length} \
+            logger.wandb.group=fractalgrid
+           
+        done
+    done
+done

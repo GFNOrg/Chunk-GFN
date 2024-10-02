@@ -17,3 +17,5 @@ n_chunks: 1
 n_samples: 5000
 library_update_frequency: 2
 n_onpolicy_samples: 512
+
+max_chunk_size: ${environment.batch_size}

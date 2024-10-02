@@ -1,0 +1,32 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+defaults:
+  - override /environment: fractalgrid.yaml
+  - override /algo: random_sampler.yaml
+  - override /trainer: default.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+seed: 42
+
+
+trainer:
+  max_epochs: 250
+  check_val_every_n_epoch: 10
+
+algo:
+  replay_buffer:
+    _target_: chunkgfn.replay_buffer.prioritized_replay.PrioritizedReplay
+    cutoff_distance: 1
+    capacity: 1000
+    is_conditional: False
+
+  chunk_algorithm: null
+
+logger:
+  wandb:
+    group: "fractalgrid"

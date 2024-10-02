@@ -42,7 +42,7 @@ class RandomSampler(BaseSampler):
         return {"optimizer": optimizer}
 
     def compute_loss(self, trajectories, actions, dones, logreward):
-        """Dummy loss."""
+        """Dummy loss for lightning not to complain."""
         return None
 
     def get_forward_logits(self, state: torch.Tensor) -> torch.Tensor:
@@ -59,7 +59,7 @@ class RandomSampler(BaseSampler):
     def validation_step(self, val_batch, batch_idx) -> Any:
         final_state, _ = val_batch
         _, _, _, _, final_state, logreward, _ = self.sample(
-            final_state,
+            final_state, train=False, epsilon=None, temperature=None
         )
 
         self.val_logreward(logreward.mean())
@@ -80,6 +80,7 @@ class RandomSampler(BaseSampler):
             train=False,
             epsilon=None,
             temperature=None,
+            calculate_logreward=False,
         )
         torch.save(
             {
