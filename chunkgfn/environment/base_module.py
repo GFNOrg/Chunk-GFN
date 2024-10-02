@@ -201,8 +201,14 @@ class BaseUnConditionalEnvironmentModule(LightningDataModule, ABC):
         return action_strings
 
     def chunk_uniform(self, n_tokens_to_add: int, remove_old: bool = False):
-        """Adds random bigrams to the action space, using current actions."""
-        non_exit_actions = copy(self.actions)
+        """Adds random bigrams to the action space, using current actions.
+        If we're required to remove old tokens, we initiate the new library with atomic tokens
+        instead of building from previous ones.
+        """
+        if remove_old: # This means that we're in chunking replacement mode
+            non_exit_actions = copy(self.atomic_tokens)
+        else:
+            non_exit_actions = copy(self.actions)
         non_exit_actions.remove(self.exit_action)
 
         novel_tokens = set()
@@ -211,6 +217,7 @@ class BaseUnConditionalEnvironmentModule(LightningDataModule, ABC):
             candidate_token = "".join(random.choices(non_exit_actions, k=2))
             if candidate_token not in non_exit_actions:
                 novel_tokens.add(candidate_token)  # Removes duplicates.
+                non_exit_actions.append(candidate_token)
 
         old_tokens = set(self.actions) - set(self.atomic_tokens)
         if remove_old:
