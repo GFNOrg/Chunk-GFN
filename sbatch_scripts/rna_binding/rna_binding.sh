@@ -11,5 +11,5 @@ module --quiet load python/3.10
 source $VENV/ai_scientist/bin/activate
 
 
-exec python main.py algo.chunk_algorithm=uniform "$@"
+exec python main.py "$@"
 
