@@ -1,7 +1,7 @@
 tasks_cutoff=(
     "L14_RNA1,3,0.9,0.1",
-    "L50_RNA1,10,0.9,0.025",
-    "L100_RNA1,20,0.85,0.0025"
+    #"L50_RNA1,10,0.9,0.025",
+    #"L100_RNA1,20,0.85,0.0025"
 )
 
 algorithms=(
@@ -10,9 +10,10 @@ algorithms=(
     "rna_sac_chunk_replacement"
 )
 
-modes_path="${HOME}/Chunk-GFN/L14_RNA1_modes.pickle"
+modes_path="${HOME}/code/chunkgfn/L14_RNA1_modes.pickle"
 
-for seed in 1998 2024 42
+#for seed in 1998 2024 42
+for seed in 1987 1963 2000
 do
     for algo in "${algorithms[@]}"
     do
@@ -27,7 +28,7 @@ do
             threshold=$(echo "$threshold" | bc)
 
             if [[ "$task" == "L14_RNA1" ]]; then
-                dataset_path="${HOME}/Chunk-GFN/L14_RNA1_dataset.pickle"
+                dataset_path="${HOME}/code/chunkgfn/L14_RNA1_dataset.pickle"
             else
                 dataset_path=null
             fi
@@ -44,7 +45,7 @@ do
             algo.replay_buffer.cutoff_distance=${cutoff} \
             logger.wandb.name=${algo}_${task} \
             logger.wandb.group=rna_binding
-           
+
         done
     done
 done

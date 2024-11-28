@@ -1,7 +1,7 @@
 tasks_cutoff=(
     "L14_RNA1,3,11,0.1",
-    "L50_RNA1,10,22,0.0133333",
-    "L100_RNA1,20,5,0.005,0.85,50"
+    #"L50_RNA1,10,22,0.0133333",
+    #"L100_RNA1,20,5,0.005,0.85,50"
 )
 
 algorithms=(
@@ -10,9 +10,10 @@ algorithms=(
     "rna_prioritized_chunk_replacement"
 )
 
-modes_path="${HOME}/Chunk-GFN/L14_RNA1_modes.pkl"
+modes_path="${HOME}/code/chunkgfn/L14_RNA1_modes.pickle"
 
-for seed in 1998 2024 42
+#for seed in 1998 2024 42
+for seed in 1987 1963 2000
 do
     for algo in "${algorithms[@]}"
     do
@@ -27,9 +28,9 @@ do
             partition_init=$((partition_init))
             temperature="${fields[3]}"
             temperatue=$(echo "$temperature" | bc)
-            
+
             if [[ "$task" == "L14_RNA1" ]]; then
-                dataset_path="${HOME}/Chunk-GFN/L14_RNA1_dataset.pkl"
+                dataset_path="${HOME}/code/chunkgfn/L14_RNA1_dataset.pkl"
             else
                 dataset_path=null
             fi
@@ -46,7 +47,7 @@ do
             algo.partition_init=${partition_init} \
             logger.wandb.name=${algo}_${task}_bpe \
             logger.wandb.group=rna_binding
-        
+
         done
     done
 done
