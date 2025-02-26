@@ -1,7 +1,7 @@
 tasks_cutoff=(
     "L14_RNA1,3,11,0.1,0.9,1",
-    "L50_RNA1,10,22,0.0133333,0.9,5",
-    "L100_RNA1,20,5,0.005,0.85,50"
+    #"L50_RNA1,10,22,0.0133333,0.9,5",
+    #"L100_RNA1,20,5,0.005,0.85,50"
 )
 
 algorithms=(
@@ -10,9 +10,10 @@ algorithms=(
     "rna_tbgfnloss_chunk_replacement"
 )
 
-modes_path="${HOME}/Chunk-GFN/L14_RNA1_modes.pickle"
+modes_path="${HOME}/code/chunkgfn/L14_RNA1_modes.pickle"
 
-for seed in 1998 2024 42
+#for seed in 1998 2024 42
+for seed in 1987 1963 2000
 do
     for algo in "${algorithms[@]}"
     do
@@ -32,9 +33,9 @@ do
             loss_threshold="${fields[5]}"
             loss_threshold=$((loss_threshold))
 
-            
+
             if [[ "$task" == "L14_RNA1" ]]; then
-                dataset_path="${HOME}/Chunk-GFN/L14_RNA1_dataset.pickle"
+                dataset_path="${HOME}/code/chunkgfn/L14_RNA1_dataset.pickle"
             else
                 dataset_path=null
             fi
@@ -54,7 +55,7 @@ do
             algo.epsilon_scheduler.final_value=0.01 \
             logger.wandb.name=${algo}_${task}_bpe \
             logger.wandb.group=rna_binding
-        
+
         done
     done
 done

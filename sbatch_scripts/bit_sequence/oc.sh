@@ -7,7 +7,9 @@ experiments=(
     "bit_sequence_oc"
 )
 
-for seed in 1998 2024 42
+#for seed in 1998 2024 42
+for seed in 1987 1963 2000
+
 do
     for exp in "${experiments[@]}"
     do

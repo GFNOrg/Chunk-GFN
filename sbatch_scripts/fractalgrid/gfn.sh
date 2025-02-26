@@ -10,7 +10,8 @@ experiments=(
     "fractalgrid_tbgfn_chunk_replacement"
 )
 
-for seed in 1998 2024 42
+#for seed in 1998 2024 42
+for seed in 1987 1963 2000
 do
     for exp in "${experiments[@]}"
     do
@@ -32,7 +33,7 @@ do
             algo.forward_policy.in_dim=${in_dim} \
             logger.wandb.name=${exp}_${side_length} \
             logger.wandb.group=fractalgrid
-           
+
         done
     done
 done

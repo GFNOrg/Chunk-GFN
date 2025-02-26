@@ -6,7 +6,9 @@ experiments=(
     "graph_oc"
 )
 
-for seed in 1998 2024 42
+#for seed in 1998 2024 42
+for seed in 1987 1963 2000
+
 do
     for exp in "${experiments[@]}"
     do
@@ -28,7 +30,7 @@ do
             algo.entropy_coeff=0.05 \
             algo.num_options=10 \
             logger.wandb.name=${exp}_${length}_bpe \
-            logger.wandb.group=graph   
+            logger.wandb.group=graph
         done
     done
 done

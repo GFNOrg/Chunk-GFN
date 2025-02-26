@@ -9,7 +9,8 @@ experiments=(
     "bit_sequence_sac_chunk_replacement"
 )
 
-for seed in 1998 2024 42
+#for seed in 1998 2024 42
+for seed in 1987 1963 2000
 do
     for exp in "${experiments[@]}"
     do
@@ -41,7 +42,7 @@ do
             logger.wandb.name=${exp}_${length}_bpe \
             logger.wandb.group=bit_sequence \
             logger=wandb_offline
-           
+
         done
     done
 done
