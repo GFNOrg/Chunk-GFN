@@ -28,7 +28,8 @@ format_for_hydra() {
 }
 
 
-for seed in 1998 2024 42
+#for seed in 1998 2024 42
+for seed in 1987 1963 2000
 do
     for lib in "${all_libs[@]}"
     do
@@ -49,6 +50,6 @@ do
             logger.wandb.name=rna_prioritized_${task}_downstream \
             logger.wandb.group=rna_binding \
             $hydra_arg
-        done 
+        done
     done
 done

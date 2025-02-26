@@ -9,7 +9,8 @@ experiments=(
     "bs_random_sampler_chunk_replacement"
 )
 
-for seed in 1998 2024 42
+#for seed in 1998 2024 42
+for seed in 1987 1963 2000
 do
     for exp in "${experiments[@]}"
     do

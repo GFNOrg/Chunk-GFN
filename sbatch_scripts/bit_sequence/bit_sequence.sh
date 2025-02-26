@@ -4,12 +4,12 @@
 #SBATCH --gres=gpu:rtx8000:1
 #SBATCH --mem=36G
 #SBATCH --time=1-06:00:00
-#SBATCH -o /network/scratch/o/oussama.boussif/slurm-%j.out
+#SBATCH -o /home/mila/v/vivianoj/scratch/logs/chunkgfn/slurm-%j.out
 #SBATCH --exclude=cn-a006,cn-a010,cn-c032,cn-c024
 
 
-module --quiet load python/3.10
-source $VENV/ai_scientist/bin/activate
-
+source /home/mila/v/vivianoj/miniconda3/bin/activate
+conda activate chunkgfn
+cd /home/mila/v/vivianoj/code/chunkgfn
 
 exec python main.py "$@"

@@ -1,7 +1,7 @@
 tasks_cutoff=(
     "L14_RNA1,3,0.9",
-    "L50_RNA1,10,0.9",
-    "L100_RNA1,20,0.85"
+    #"L50_RNA1,10,0.9",
+    #"L100_RNA1,20,0.85"
 )
 
 experiments=(
@@ -10,9 +10,10 @@ experiments=(
     "rna_random_sampler_chunk_replacement"
 )
 
-modes_path="${HOME}/Chunk-GFN/L14_RNA1_modes.pickle"
+modes_path="${HOME}/code/chunkgfn/L14_RNA1_modes.pickle"
 
-for seed in 1998 2024 42
+#for seed in 1998 2024 42
+for seed in 1987 1963 2000
 do
     for exp in "${experiments[@]}"
     do
@@ -27,7 +28,7 @@ do
             threshold=$(echo "$threshold" | bc)
 
             if [[ "$task" == "L14_RNA1" ]]; then
-                dataset_path="${HOME}/Chunk-GFN/L14_RNA1_dataset.pickle"
+                dataset_path="${HOME}/code/chunkgfn/L14_RNA1_dataset.pickle"
             else
                 dataset_path=null
             fi

@@ -42,11 +42,12 @@ class MLP(BasePolicy):
 
 
 class Critic(BasePolicy):
-    def __init__(self, num_layers, hidden_dim, in_dim, activation):
+    def __init__(self, num_layers, hidden_dim, in_dim, activation, n_options=1):
         super(Critic, self).__init__()
         self.num_layers = num_layers
         self.hidden_dim = hidden_dim
         self.in_dim = in_dim
+        self.n_options = n_options
 
         self.layers = nn.ModuleList()
         self.layers.append(nn.Linear(in_dim, hidden_dim))
@@ -56,7 +57,7 @@ class Critic(BasePolicy):
             self.layers.append(activation)
         self.layers.append(nn.LayerNorm(hidden_dim))
         # This layer generates the action embedding that will be used for picking the next action
-        self.action_embedding_layer = nn.Linear(hidden_dim, 1)
+        self.action_embedding_layer = nn.Linear(hidden_dim, n_options)
 
     def forward(self, state):
         """

@@ -77,7 +77,7 @@ class logZ(nn.Module):
 
 
 class Critic(nn.Module):
-    def __init__(self, num_layers, hidden_dim, state_dim, act):
+    def __init__(self, num_layers, hidden_dim, state_dim, act, n_options=1):
         super(Critic, self).__init__()
         self.num_layers = num_layers
         self.hidden_dim = hidden_dim
@@ -97,7 +97,7 @@ class Critic(nn.Module):
             self.layers.append(act)
         self.layers.append(nn.LayerNorm(hidden_dim))
 
-        self.q_value = nn.Linear(hidden_dim, 1)
+        self.q_value = nn.Linear(hidden_dim, n_options)
 
     def forward(self, state):
         """

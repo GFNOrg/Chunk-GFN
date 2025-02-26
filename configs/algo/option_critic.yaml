@@ -1,0 +1,45 @@
+_target_: chunkgfn.algo.option_critic.OptionCritic
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  weight_decay: 0.0
+
+scheduler: null
+
+forward_policy: null
+  
+critic: null
+
+beta: null
+
+option_epsilon_scheduler:
+  _target_: chunkgfn.schedulers.linear_schedule.LinearSchedule
+  initial_value: 0.1
+  final_value: 0.01
+  max_epochs: ${trainer.max_epochs}
+
+action_embedder:
+  _target_: chunkgfn.models.action_encoder.ActionModel
+  n_primitive_actions: 3
+  hidden_dim: 128
+  action_embedding_dimension: 128
+
+forward_policy_lr: 1e-4
+critic_lr: 1e-3
+action_embedder_lr: 1e-3
+option_lr: 1e-3
+beta_lr: 1e-4
+
+termination_reg: 0.01
+
+monitor: train/logreward
+
+n_onpolicy_samples: 512 # Number of on-policy samples to draw for each validation step
+entropy_coeff: 0.05 # Entropy coefficient for the policy
+
+chunk_algorithm: null
+
+max_chunk_size: ${environment.batch_size}
+
+num_options: 10
