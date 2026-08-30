@@ -13,7 +13,7 @@
 
 ## Description
 
-This is the official repository to the paper ["Action abstractions for amortized sampling"](https://arxiv.org/abs/2410.15184) by Oussama Boussif, Léna Néhale Ezzine, Joseph D Viviano, Michał Koziarski, Moksh Jain, Nikolay Malkin, Emmanuel Bengio, Rim Assouel and Yoshua Bengio.
+This is the official repository to the ICLR 2025 paper ["Action abstractions for amortized sampling"](https://arxiv.org/abs/2410.15184) by Oussama Boussif, Léna Néhale Ezzine, Joseph D Viviano, Michał Koziarski, Moksh Jain, Esmeralda S. Whitammer, Emmanuel Bengio, Rim Assouel and Yoshua Bengio.
 
 We introduce **ActionPiece**, a method for discovering action abstractions in reinforcement learning (RL) and generative flow networks (GFlowNets) to improve exploration and credit assignment in long-horizon tasks. By iteratively identifying and chunking frequently used action subsequences, our approach enhances sample efficiency and mode discovery, particularly in entropy-seeking RL. Empirical results show improved performance in discovering diverse high-reward states, with learned abstractions capturing the latent structure of the action space.
 
@@ -23,11 +23,12 @@ We introduce **ActionPiece**, a method for discovering action abstractions in re
 If you use this codebase, or otherwise found our work valuable, please cite ActionPiece
 
 ```
-@inproceedings{Boussif2024action,
+@article{Boussif2024action,
   title  = {Action abstractions for amortized sampling},
-  author = {Oussama Boussif and Lena Nehale Ezzine and Joseph D Viviano and Michał Koziarski and Moksh Jain and Nikolay Malkin and Emmanuel Bengio and Rim Assouel and Yoshua Bengio},
-  year   = {2024},
-  url    = {https://openreview.net/forum?id=ispjankYab&referrer=%5Bthe%20profile%20of%20Oussama%20Boussif%5D(%2Fprofile%3Fid%3D~Oussama_Boussif1)}
+  author = {Oussama Boussif and Lena Nehale Ezzine and Joseph D Viviano and Michał Koziarski and Moksh Jain and Esmeralda S. Whitammer and Emmanuel Bengio and Rim Assouel and Yoshua Bengio},
+  year   = {2025},
+  journal= {International Conference on Learning Representations (ICLR)},
+  url    = {https://openreview.net/forum?id=ispjankYab}
 }
 ```
 
